@@ -259,6 +259,7 @@ class ImportScripts::Base
       opts[:username].length < User.username_length.begin ||
       opts[:username].length > User.username_length.end ||
       opts[:username] =~ /[^A-Za-z0-9_]/ ||
+      opts[:username] =~ /[\-_\.]{2,}/ ||
       opts[:username][0] =~ /[^A-Za-z0-9]/ ||
       !User.username_available?(opts[:username])
       opts[:username] = UserNameSuggester.suggest(opts[:username] || opts[:name] || opts[:email])
