@@ -290,6 +290,14 @@ class PostsController < ApplicationController
     render nothing: true
   end
 
+  def revert_revision
+    post_revision = find_post_revision_from_params
+
+    Rails.logger.info "post_revision -- #{post_revision.inspect}"
+
+    render nothing: true
+  end
+
   def bookmark
     post = find_post_from_params
 

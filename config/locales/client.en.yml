@@ -1577,6 +1577,7 @@ en:
           side_by_side_markdown:
             title: "Show the raw source diffs side-by-side"
             button: '<i class="fa fa-columns"></i> Raw'
+        revert: "Revert"
 
     category:
       can: 'can&hellip; '

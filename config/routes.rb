@@ -378,6 +378,7 @@ Discourse::Application.routes.draw do
     get "revisions/:revision" => "posts#revisions", constraints: { revision: /\d+/ }
     put "revisions/:revision/hide" => "posts#hide_revision", constraints: { revision: /\d+/ }
     put "revisions/:revision/show" => "posts#show_revision", constraints: { revision: /\d+/ }
+    put "revisions/:revision/revert" => "posts#revert_revision", constraints: { revision: /\d+/ }
     put "recover"
     collection do
       delete "destroy_many"

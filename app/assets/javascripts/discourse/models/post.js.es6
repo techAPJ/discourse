@@ -419,6 +419,10 @@ Post.reopenClass({
     return Discourse.ajax("/posts/" + postId + "/revisions/" + version + "/show", { type: 'PUT' });
   },
 
+  revertRevision(postId, version) {
+    return Discourse.ajax("/posts/" + postId + "/revisions/" + version + "/revert", { type: 'PUT' });
+  },
+
   loadQuote(postId) {
     return Discourse.ajax("/posts/" + postId + ".json").then(result => {
       const post = Discourse.Post.create(result);

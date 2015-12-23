@@ -144,6 +144,11 @@ export default Ember.Controller.extend(ModalFunctionality, {
 
     displayInline()             { this.set("viewMode", "inline"); },
     displaySideBySide()         { this.set("viewMode", "side_by_side"); },
-    displaySideBySideMarkdown() { this.set("viewMode", "side_by_side_markdown"); }
+    displaySideBySideMarkdown() { this.set("viewMode", "side_by_side_markdown"); },
+
+    revert() {
+      Discourse.Post.revertRevision(this.get("model.post_id"), this.get("model.current_revision"));
+      console.log("here");
+    }
   }
 });
