@@ -2,7 +2,7 @@ require_dependency 'topic_subtype'
 
 class Report
 
-  attr_accessor :type, :data, :total, :prev30Days, :start_date, :end_date, :category_id
+  attr_accessor :type, :data, :total, :prev30Days, :start_date, :end_date, :category_id, :group_id
 
   def self.default_days
     30
@@ -41,6 +41,7 @@ class Report
     report.start_date = opts[:start_date] if opts[:start_date]
     report.end_date = opts[:end_date] if opts[:end_date]
     report.category_id = opts[:category_id] if opts[:category_id]
+    report.group_id = opts[:group_id] if opts[:group_id]
     report_method = :"report_#{type}"
 
     if respond_to?(report_method)
@@ -85,8 +86,18 @@ class Report
 
 
   def self.report_visits(report)
-    basic_report_about report, UserVisit, :by_day, report.start_date, report.end_date
-    add_counts report, UserVisit, 'visited_at'
+    basic_report_about report, UserVisit, :by_day, report.start_date, report.end_date, report.group_id
+
+    if report.group_id
+      countable = UserVisit
+      countable = countable.joins("INNER JOIN users ON users.id = user_visits.user_id")
+      countable = countable.joins("INNER JOIN group_users ON group_users.user_id = users.id")
+      countable = countable.where("group_users.group_id = ?", report.group_id)
+
+      add_counts report, countable, 'user_visits.visited_at'
+    else
+      add_counts report, UserVisit, 'visited_at'
+    end
   end
 
   def self.report_mobile_visits(report)
@@ -96,15 +107,30 @@ class Report
   end
 
   def self.report_signups(report)
-    report_about report, User.real, :count_by_signup_date
+    if report.group_id
+      basic_report_about report, User.real, :count_by_signup_date, report.start_date, report.end_date, report.group_id
+
+      countable = User.real
+      countable = countable.joins("INNER JOIN group_users ON group_users.user_id = users.id")
+      countable = countable.where("group_users.group_id = ?", report.group_id)
+      add_counts report, countable, 'users.created_at'
+    else
+      report_about report, User.real, :count_by_signup_date
+    end
   end
 
   def self.report_profile_views(report)
     start_date = report.start_date.to_date
     end_date = report.end_date.to_date
-    basic_report_about report, UserProfileView, :profile_views_by_day, start_date, end_date
-    report.total = UserProfile.sum(:views)
-    report.prev30Days = UserProfileView.where("viewed_at >= ? AND viewed_at < ?", start_date - 30.days, start_date + 1).count
+    basic_report_about report, UserProfileView, :profile_views_by_day, start_date, end_date, report.group_id
+
+    if report.group_id
+      report.total = UserProfile.joins("INNER JOIN group_users ON group_users.user_id = user_profiles.user_id").where("group_users.group_id = ?", report.group_id).sum(:views)
+      report.prev30Days = UserProfileView.joins("INNER JOIN group_users ON group_users.user_id = user_profile_views.user_id").where("group_users.group_id = ?", report.group_id).where("viewed_at >= ? AND viewed_at < ?", start_date - 30.days, start_date + 1).count
+    else
+      report.total = UserProfile.sum(:views)
+      report.prev30Days = UserProfileView.where("viewed_at >= ? AND viewed_at < ?", start_date - 30.days, start_date + 1).count
+    end
   end
 
   def self.report_topics(report)

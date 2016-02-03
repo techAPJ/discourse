@@ -13,11 +13,26 @@ class Admin::ReportsController < Admin::AdminController
     end_date = start_date + 1.month
     end_date = Time.parse(params[:end_date]) if params[:end_date].present?
 
-    category_id = if params.has_key?(:category_id)
-      params[:category_id].blank? ? SiteSetting.uncategorized_category_id : params[:category_id].to_i
+    # category_id = if params.has_key?(:category_id)
+    #   params[:category_id].blank? ? SiteSetting.uncategorized_category_id : params[:category_id].to_i
+    # end
+    if params.has_key?(:category_id) && params[:category_id].to_i > 0
+      category_id = params[:category_id].to_i
+    else
+      # category_id = SiteSetting.uncategorized_category_id
+      category_id = nil
     end
 
-    report = Report.find(report_type, start_date: start_date, end_date: end_date, category_id: category_id)
+    # group_id = if params.has_key?(:group_id)
+    #   params[:category_id].blank? ? SiteSetting.uncategorized_category_id : params[:category_id].to_i
+    # end
+    if params.has_key?(:group_id) && params[:group_id].to_i > 0
+      group_id = params[:group_id]
+    else
+      group_id = nil
+    end
+
+    report = Report.find(report_type, start_date: start_date, end_date: end_date, category_id: category_id, group_id: group_id)
 
     raise Discourse::NotFound if report.blank?
 
