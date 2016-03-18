@@ -3,7 +3,7 @@ require File.expand_path(File.dirname(__FILE__) + "/base.rb")
 
 class ImportScripts::Drupal < ImportScripts::Base
 
-  DRUPAL_DB = ENV['DRUPAL_DB'] || "newsite3"
+  DRUPAL_DB = ENV['DRUPAL_DB'] || "drupal"
   VID = ENV['DRUPAL_VID'] || 1
 
   def initialize
@@ -18,7 +18,7 @@ class ImportScripts::Drupal < ImportScripts::Base
   end
 
   def categories_query
-    @client.query("SELECT tid, name, description FROM taxonomy_term_data WHERE vid = #{VID}")
+    @client.query("SELECT tid, name, description FROM taxonomy_term_data")
   end
 
   def execute
@@ -71,7 +71,7 @@ class ImportScripts::Drupal < ImportScripts::Base
        WHERE n.type = 'blog'
          AND n.nid = f.entity_id
          AND n.status = 1
-    ", cache_rows: false)
+    ")
 
     create_posts(results) do |row|
       {
@@ -117,7 +117,7 @@ class ImportScripts::Drupal < ImportScripts::Base
            AND n.status = 1
          LIMIT #{batch_size}
         OFFSET #{offset};
-      ", cache_rows: false)
+      ")
 
       break if results.size < 1
 
@@ -165,7 +165,7 @@ class ImportScripts::Drupal < ImportScripts::Base
            AND n.status = 1
          LIMIT #{batch_size}
         OFFSET #{offset};
-      ", cache_rows: false)
+      ")
 
       break if results.size < 1
 
@@ -199,3 +199,15 @@ end
 if __FILE__==$0
   ImportScripts::Drupal.new.perform
 end
+
+# Key (val)=(nid:66276) already exists.
+# Key (val)=(nid:66554) already exists.
+
+# SELECT nid, COUNT(*) as count
+# FROM forum_index
+# GROUP BY nid
+# HAVING COUNT(*) > 1
+#
+# CREATE TABLE forum_index1 SELECT DISTINCT * FROM forum_index;
+# ALTER TABLE forum_index RENAME forum_index_junk;
+# ALTER TABLE forum_index1 RENAME forum_index;
