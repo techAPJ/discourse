@@ -201,6 +201,9 @@ gem 'rmmseg-cpp', require: false
 
 gem 'logster'
 
+gem 'ruby-bbcode-to-md', :github => 'nlalonde/ruby-bbcode-to-md'
+gem 'sequel'
+
 # perftools only works on 1.9 atm
 group :profile do
   # travis refuses to install this, instead of fuffing, just avoid it for now

@@ -42,9 +42,9 @@ module ImportScripts::PhpBB3
     def get_site_settings_for_import
       settings = super
 
-      max_file_size_kb = @database.get_max_attachment_size
-      settings[:max_image_size_kb] = [max_file_size_kb, SiteSetting.max_image_size_kb].max
-      settings[:max_attachment_size_kb] = [max_file_size_kb, SiteSetting.max_attachment_size_kb].max
+      # max_file_size_kb = @database.get_max_attachment_size
+      # settings[:max_image_size_kb] = [max_file_size_kb, SiteSetting.max_image_size_kb].max
+      # settings[:max_attachment_size_kb] = [max_file_size_kb, SiteSetting.max_attachment_size_kb].max
 
       settings
     end

@@ -24,15 +24,14 @@ module ImportScripts::PhpBB3
         filename = "avatar#{File.extname(path)}"
         upload = @uploader.create_upload(user.id, path, filename)
 
-        if upload.present? && upload.persisted?
+        if upload.persisted?
           user.import_mode = false
           user.create_user_avatar
           user.import_mode = true
           user.user_avatar.update(custom_upload_id: upload.id)
           user.update(uploaded_avatar_id: upload.id)
         else
-          puts "Failed to upload avatar for user #{user.username}: #{path}"
-          puts upload.errors.inspect if upload
+          Rails.logger.error("Could not persist avatar for user #{user.username}")
         end
       rescue SystemCallError => err
         Rails.logger.error("Could not import avatar for user #{user.username}: #{err.message}")

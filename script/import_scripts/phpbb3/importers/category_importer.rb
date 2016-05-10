@@ -12,7 +12,7 @@ module ImportScripts::PhpBB3
     def map_category(row)
       {
         id: row[:forum_id],
-        name: CGI.unescapeHTML(row[:forum_name]),
+        name: get_category_name(row[:forum_name]),
         parent_category_id: @lookup.category_id_from_imported_category_id(row[:parent_id]),
         post_create_action: proc do |category|
           update_category_description(category, row)
@@ -22,6 +22,16 @@ module ImportScripts::PhpBB3
     end
 
     protected
+
+    def get_category_name(forum_name)
+      if forum_name == "Objective-C Programming: The Big Nerd Ranch Guide (2nd Edition)"
+        category_name = "Objective-C Programming (2nd Edition)"
+      else
+        category_name = forum_name
+      end
+
+      return CGI.unescapeHTML(category_name),
+    end
 
     # @param category [Category]
     def update_category_description(category, row)
