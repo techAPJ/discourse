@@ -5,7 +5,7 @@ database:
   host: localhost
   username: techapj
   password:
-  schema: bignerdranch
+  database_name: bignerdranch
   table_prefix: phpbb # Usually all table names start with phpbb. Change this, if your forum is using a different prefix.
   batch_size: 1000 # Don't change this unless you know what you're doing. The default (1000) should work just fine.
 

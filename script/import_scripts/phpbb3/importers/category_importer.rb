@@ -30,7 +30,7 @@ module ImportScripts::PhpBB3
         category_name = forum_name
       end
 
-      return CGI.unescapeHTML(category_name),
+      return CGI.unescapeHTML(category_name)
     end
 
     # @param category [Category]

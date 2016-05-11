@@ -60,10 +60,10 @@ module ImportScripts::PhpBB3
       last_user_id = 0
 
       batches do |offset|
-        rows, last_user_id = @database.fetch_users(last_user_id)
+        rows = @database.fetch_users(offset)
         break if rows.size < 1
 
-        next if all_records_exist?(:users, importer.map_users_to_import_ids(rows))
+        # next if all_records_exist?(:users, importer.map_users_to_import_ids(rows))
 
         create_users(rows, total: total_count, offset: offset) do |row|
           importer.map_user(row)
@@ -75,13 +75,14 @@ module ImportScripts::PhpBB3
       puts '', 'creating anonymous users'
       total_count = @database.count_anonymous_users
       importer = @importers.user_importer
-      last_username = ''
+      # last_username = ''
 
       batches do |offset|
-        rows, last_username = @database.fetch_anonymous_users(last_username)
+        # rows, last_username = @database.fetch_anonymous_users(last_username)
+        rows = @database.fetch_anonymous_users(offset)
         break if rows.size < 1
 
-        next if all_records_exist?(:users, importer.map_anonymous_users_to_import_ids(rows))
+        # next if all_records_exist?(:users, importer.map_anonymous_users_to_import_ids(rows))
 
         create_users(rows, total: total_count, offset: offset) do |row|
           importer.map_anonymous_user(row)
@@ -106,10 +107,11 @@ module ImportScripts::PhpBB3
       last_post_id = 0
 
       batches do |offset|
-        rows, last_post_id = @database.fetch_posts(last_post_id)
+        # rows, last_post_id = @database.fetch_posts(last_post_id)
+        rows = @database.fetch_posts(offset)
         break if rows.size < 1
 
-        next if all_records_exist?(:posts, importer.map_to_import_ids(rows))
+        # next if all_records_exist?(:posts, importer.map_to_import_ids(rows))
 
         create_posts(rows, total: total_count, offset: offset) do |row|
           importer.map_post(row)
@@ -126,13 +128,14 @@ module ImportScripts::PhpBB3
       puts '', 'creating private messages'
       total_count = @database.count_messages(@settings.fix_private_messages)
       importer = @importers.message_importer
-      last_msg_id = 0
+      # last_msg_id = 0
 
       batches do |offset|
-        rows, last_msg_id = @database.fetch_messages(@settings.fix_private_messages, last_msg_id)
+        # rows, last_msg_id = @database.fetch_messages(@settings.fix_private_messages, last_msg_id)
+        rows = @database.fetch_messages(@settings.fix_private_messages, offset)
         break if rows.size < 1
 
-        next if all_records_exist?(:posts, importer.map_to_import_ids(rows))
+        # next if all_records_exist?(:posts, importer.map_to_import_ids(rows))
 
         create_posts(rows, total: total_count, offset: offset) do |row|
           importer.map_message(row)
@@ -147,7 +150,8 @@ module ImportScripts::PhpBB3
       last_user_id = last_topic_id = 0
 
       batches do |offset|
-        rows, last_user_id, last_topic_id = @database.fetch_bookmarks(last_user_id, last_topic_id)
+        # rows, last_user_id, last_topic_id = @database.fetch_bookmarks(last_user_id, last_topic_id)
+        rows = @database.fetch_bookmarks(offset)
         break if rows.size < 1
 
         create_bookmarks(rows, total: total_count, offset: offset) do |row|

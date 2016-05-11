@@ -66,7 +66,7 @@ module ImportScripts::PhpBB3
     attr_reader :port
     attr_reader :username
     attr_reader :password
-    attr_reader :schema
+    attr_reader :database_name
     attr_reader :table_prefix
     attr_reader :batch_size
 
@@ -76,7 +76,7 @@ module ImportScripts::PhpBB3
       @port = yaml['port']
       @username = yaml['username']
       @password = yaml['password']
-      @schema = yaml['schema']
+      @database_name = yaml['database_name']
       @table_prefix = yaml['table_prefix']
       @batch_size = yaml['batch_size']
     end
