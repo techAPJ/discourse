@@ -1806,6 +1806,10 @@ en:
       clicks:
         one: "1 click"
         other: "%{count} clicks"
+    post_links:
+      title:
+        one: "1 post link"
+        other: "%{count} post links"
 
     topic_statuses:
       warning:
