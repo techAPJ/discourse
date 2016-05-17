@@ -70,12 +70,21 @@
       <section class="topic-area" id="topic" data-topic-id="{{unbound model.id}}">
         <div class="posts-wrapper">
 
-          {{topic-progress topic=model
-                           progressPosition=progressPosition
-                           jumpTop="jumpTop"
-                           jumpBottom="jumpBottom"}}
-
-          {{conditional-loading-spinner condition=model.postStream.loadingAbove}}
+          {{#if showTimeline}}
+            <div class='fixed-gutter'>
+              {{topic-timeline topic=model
+                               jumpTop="jumpTop"
+                               jumpToPost="jumpToPost"
+                               jumpBottom="jumpBottom"
+                               replyToPost="replyToPost"}}
+            </div>
+          {{else}}
+            {{topic-progress topic=model
+                             jumpTop="jumpTop"
+                             jumpToPost="jumpToPost"
+                             jumpBottom="jumpBottom"}}
+          {{/if}}
+          {{conditional-loading-spinner condition=model.postStream.loadingAbove containerClass=loadingClass}}
 
           {{plugin-outlet "topic-above-posts"}}
 
@@ -107,6 +116,7 @@
               removeAllowedUser="removeAllowedUser"
               showInvite="showInvite"
               topVisibleChanged="topVisibleChanged"
+              currentPostChanged="currentPostChanged"
               bottomVisibleChanged="bottomVisibleChanged"
               selectPost="toggledSelectedPost"
               selectReplies="toggledSelectedPostReplies"
@@ -116,7 +126,7 @@
         </div>
         <div id="topic-bottom"></div>
 
-        {{#conditional-loading-spinner condition=model.postStream.loadingFilter}}
+        {{#conditional-loading-spinner condition=model.postStream.loadingFilter containerClass=loadingClass}}
           {{#if loadedAllPosts}}
 
             {{topic-closing topic=model}}
