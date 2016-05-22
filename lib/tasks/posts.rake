@@ -26,6 +26,30 @@ task 'posts:fix_letter_avatars' => :environment do
   puts "", "#{rebaked} posts done!", ""
 end
 
+desc 'Remap all posts'
+task 'posts:remap' => :environment do
+  require 'import/image_me'
+
+  puts "Remapping"
+  i = 0
+  Post.where("raw LIKE '%/wp-content/%'").each do |p|
+    # normalized = Import::Normalize.normalize_code_blocks(p.raw, lang)
+    new_raw_post = Import::ImageMe.get_raw_post(p.raw)
+    # puts "hwhhwhwh -- #{new_raw_post}"
+    # exit
+
+    if new_raw_post != p.raw
+      # puts "hehhrrh"
+      p.revise(Discourse.system_user, { raw: new_raw_post }, { bypass_bump: true })
+      # p.revise(Discourse.system_user, { raw: new_raw_post})
+      putc "."
+      i += 1
+    end
+  end
+  puts
+  puts "#{i} posts normalized!"
+end
+
 def rebake_posts_all_sites(opts = {})
   RailsMultisite::ConnectionManagement.each_connection do |db|
     rebake_posts(opts)
