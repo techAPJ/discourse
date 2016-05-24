@@ -33,19 +33,78 @@ task 'posts:remap' => :environment do
   puts "Remapping"
   i = 0
   Post.where("raw LIKE '%/wp-content/%'").each do |p|
-    # normalized = Import::Normalize.normalize_code_blocks(p.raw, lang)
     new_raw_post = Import::ImageMe.get_raw_post(p.raw)
-    # puts "hwhhwhwh -- #{new_raw_post}"
-    # exit
 
     if new_raw_post != p.raw
-      # puts "hehhrrh"
       p.revise(Discourse.system_user, { raw: new_raw_post }, { bypass_bump: true })
-      # p.revise(Discourse.system_user, { raw: new_raw_post})
       putc "."
       i += 1
     end
   end
+  puts
+  puts "#{i} posts normalized!"
+end
+
+desc 'Get Attachments from all posts'
+task 'posts:attachments' => :environment do
+  require 'import/image_me'
+
+  puts "Remapping"
+  i = 0
+  post_ids = []
+
+  Post.where("raw LIKE '%/wp-content/%'").each do |p|
+    new_raw_post = Import::ImageMe.has_attachment(p.raw)
+    if new_raw_post
+      post_ids << p.id
+      putc "."
+      i += 1
+    end
+  end
+
+  CSV.open(File.expand_path("../posts.csv", __FILE__), "w") do |csv|
+    csv << post_ids
+  end
+
+  puts
+  puts "#{i} posts normalized!"
+end
+
+desc 'Revert all posts'
+task 'posts:revert' => :environment do
+
+  puts "Reverting"
+  i = 0
+
+  CSV.foreach(File.expand_path("../posts.csv", __FILE__), { :col_sep => ',' }) do |post_id|
+    # puts post_id
+
+    post_revision = PostRevision.find_by(post_id: post_id, number: 2)
+
+    if post_revision
+      post = Post.where(id: post_id).first
+
+      post_revision.post = post
+
+      topic = Topic.with_deleted.find(post.topic_id)
+
+      changes = {}
+      changes[:raw] = post_revision.modifications["raw"][0] if post_revision.modifications["raw"].present? && post_revision.modifications["raw"][0] != post.raw
+
+      if changes.length > 0
+        changes[:edit_reason] = "reverted to version ##{post_revision.number.to_i - 1}"
+
+        revisor = PostRevisor.new(post, topic)
+        # revisor.revise!(Discourse.system_user, changes, { bypass_bump: true })
+        revisor.revise!(Discourse.system_user, changes)
+        putc "."
+        i += 1
+      else
+        puts "error in reverting post #{post_id}"
+      end
+    end
+  end
+
   puts
   puts "#{i} posts normalized!"
 end
