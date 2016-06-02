@@ -135,6 +135,11 @@ class InvitesController < ApplicationController
     render nothing: true
   end
 
+  def resend_all_invites
+    Invite.resend_all_invites_from(current_user.id)
+    render nothing: true
+  end
+
   def check_csv_chunk
     guardian.ensure_can_bulk_invite_to_forum!(current_user)
 
