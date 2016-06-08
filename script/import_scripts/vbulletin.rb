@@ -6,8 +6,9 @@ class ImportScripts::VBulletin < ImportScripts::Base
   BATCH_SIZE = 1000
 
   # CHANGE THESE BEFORE RUNNING THE IMPORTER
-  DATABASE = "iref"
-  TIMEZONE = "Asia/Kolkata"
+  DATABASE = "quartertothree"
+  TABLE_PREFIX = "vb_"
+  TIMEZONE = "America/Los_Angeles"
   ATTACHMENT_DIR = '/path/to/your/attachment/folder'
 
   def initialize
@@ -34,7 +35,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
     import_posts
     import_attachments
 
-    close_topics
+    # close_topics
     post_process_posts
   end
 
@@ -43,7 +44,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
 
     groups = mysql_query <<-SQL
         SELECT usergroupid, title
-          FROM usergroup
+          FROM #{TABLE_PREFIX}usergroup
       ORDER BY usergroupid
     SQL
 
@@ -58,12 +59,12 @@ class ImportScripts::VBulletin < ImportScripts::Base
   def import_users
     puts "", "importing users"
 
-    user_count = mysql_query("SELECT COUNT(userid) count FROM user").first["count"]
+    user_count = mysql_query("SELECT COUNT(userid) count FROM #{TABLE_PREFIX}user").first["count"]
 
     batches(BATCH_SIZE) do |offset|
       users = mysql_query <<-SQL
           SELECT userid, username, homepage, usertitle, usergroupid, joindate, email
-            FROM user
+            FROM #{TABLE_PREFIX}user
         ORDER BY userid
            LIMIT #{BATCH_SIZE}
           OFFSET #{offset}
@@ -98,7 +99,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
   def import_profile_picture(old_user, imported_user)
     query = mysql_query <<-SQL
         SELECT filedata, filename
-          FROM customavatar
+          FROM #{TABLE_PREFIX}customavatar
          WHERE userid = #{old_user["userid"]}
       ORDER BY dateline DESC
          LIMIT 1
@@ -127,7 +128,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
   def import_profile_background(old_user, imported_user)
     query = mysql_query <<-SQL
         SELECT filedata, filename
-          FROM customprofilepic
+          FROM #{TABLE_PREFIX}customprofilepic
          WHERE userid = #{old_user["userid"]}
       ORDER BY dateline DESC
          LIMIT 1
@@ -154,11 +155,11 @@ class ImportScripts::VBulletin < ImportScripts::Base
   def import_categories
     puts "", "importing top level categories..."
 
-    categories = mysql_query("SELECT forumid, title, description, displayorder, parentid FROM forum ORDER BY forumid").to_a
+    categories = mysql_query("SELECT forumid, title, description, displayorder, parentid FROM #{TABLE_PREFIX}forum ORDER BY forumid").to_a
 
-    top_level_categories = categories.select { |c| c["parentid"] == -1 }
+    # top_level_categories = categories.select { |c| c["parentid"] == -1 }
 
-    create_categories(top_level_categories) do |category|
+    create_categories(categories) do |category|
       {
         id: category["forumid"],
         name: @htmlentities.decode(category["title"]).strip,
@@ -167,27 +168,27 @@ class ImportScripts::VBulletin < ImportScripts::Base
       }
     end
 
-    puts "", "importing children categories..."
-
-    children_categories = categories.select { |c| c["parentid"] != -1 }
-    top_level_category_ids = Set.new(top_level_categories.map { |c| c["forumid"] })
-
-    # cut down the tree to only 2 levels of categories
-    children_categories.each do |cc|
-      while !top_level_category_ids.include?(cc["parentid"])
-        cc["parentid"] = categories.detect { |c| c["forumid"] == cc["parentid"] }["parentid"]
-      end
-    end
-
-    create_categories(children_categories) do |category|
-      {
-        id: category["forumid"],
-        name: @htmlentities.decode(category["title"]).strip,
-        position: category["displayorder"],
-        description: @htmlentities.decode(category["description"]).strip,
-        parent_category_id: category_id_from_imported_category_id(category["parentid"])
-      }
-    end
+    # puts "", "importing children categories..."
+    #
+    # children_categories = categories.select { |c| c["parentid"] != -1 }
+    # top_level_category_ids = Set.new(top_level_categories.map { |c| c["forumid"] })
+    #
+    # # cut down the tree to only 2 levels of categories
+    # children_categories.each do |cc|
+    #   while !top_level_category_ids.include?(cc["parentid"])
+    #     cc["parentid"] = categories.detect { |c| c["forumid"] == cc["parentid"] }["parentid"]
+    #   end
+    # end
+    #
+    # create_categories(children_categories) do |category|
+    #   {
+    #     id: category["forumid"],
+    #     name: @htmlentities.decode(category["title"]).strip,
+    #     position: category["displayorder"],
+    #     description: @htmlentities.decode(category["description"]).strip,
+    #     parent_category_id: category_id_from_imported_category_id(category["parentid"])
+    #   }
+    # end
   end
 
   def import_topics
@@ -196,14 +197,14 @@ class ImportScripts::VBulletin < ImportScripts::Base
     # keep track of closed topics
     @closed_topic_ids = []
 
-    topic_count = mysql_query("SELECT COUNT(threadid) count FROM thread").first["count"]
+    topic_count = mysql_query("SELECT COUNT(threadid) count FROM #{TABLE_PREFIX}thread").first["count"]
 
     batches(BATCH_SIZE) do |offset|
       topics = mysql_query <<-SQL
           SELECT t.threadid threadid, t.title title, forumid, open, postuserid, t.dateline dateline, views, t.visible visible, sticky,
                  p.pagetext raw
-            FROM thread t
-            JOIN post p ON p.postid = t.firstpostid
+            FROM #{TABLE_PREFIX}thread t
+            JOIN #{TABLE_PREFIX}post p ON p.postid = t.firstpostid
         ORDER BY t.threadid
            LIMIT #{BATCH_SIZE}
           OFFSET #{offset}
@@ -239,13 +240,13 @@ class ImportScripts::VBulletin < ImportScripts::Base
     # make sure `firstpostid` is indexed
     mysql_query("CREATE INDEX firstpostid_index ON thread (firstpostid)")
 
-    post_count = mysql_query("SELECT COUNT(postid) count FROM post WHERE postid NOT IN (SELECT firstpostid FROM thread)").first["count"]
+    post_count = mysql_query("SELECT COUNT(postid) count FROM #{TABLE_PREFIX}post WHERE postid NOT IN (SELECT firstpostid FROM #{TABLE_PREFIX}thread)").first["count"]
 
     batches(BATCH_SIZE) do |offset|
       posts = mysql_query <<-SQL
           SELECT postid, userid, threadid, pagetext raw, dateline, visible, parentid
-            FROM post
-           WHERE postid NOT IN (SELECT firstpostid FROM thread)
+            FROM #{TABLE_PREFIX}post
+           WHERE postid NOT IN (SELECT firstpostid FROM #{TABLE_PREFIX}thread)
         ORDER BY postid
            LIMIT #{BATCH_SIZE}
           OFFSET #{offset}
@@ -278,7 +279,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
   def find_upload(post, attachment_id)
     sql = "SELECT a.attachmentid attachment_id, a.userid user_id, a.filedataid file_id, a.filename filename,
                   a.caption caption
-             FROM attachment a
+             FROM #{TABLE_PREFIX}attachment a
             WHERE a.attachmentid = #{attachment_id}"
     results = mysql_query(sql)
 
@@ -314,7 +315,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
     puts '', 'importing attachments...'
 
     current_count = 0
-    total_count = mysql_query("SELECT COUNT(postid) count FROM post WHERE postid NOT IN (SELECT firstpostid FROM thread)").first["count"]
+    total_count = mysql_query("SELECT COUNT(postid) count FROM #{TABLE_PREFIX}post WHERE postid NOT IN (SELECT firstpostid FROM #{TABLE_PREFIX}thread)").first["count"]
 
     success_count = 0
     fail_count = 0
@@ -353,15 +354,15 @@ class ImportScripts::VBulletin < ImportScripts::Base
     sql = <<-SQL
       WITH closed_topic_ids AS (
         SELECT t.id AS topic_id
-        FROM post_custom_fields pcf
-        JOIN posts p ON p.id = pcf.post_id
-        JOIN topics t ON t.id = p.topic_id
+        FROM #{TABLE_PREFIX}post_custom_fields pcf
+        JOIN #{TABLE_PREFIX}posts p ON p.id = pcf.post_id
+        JOIN #{TABLE_PREFIX}topics t ON t.id = p.topic_id
         WHERE pcf.name = 'import_id'
         AND pcf.value IN (?)
       )
       UPDATE topics
       SET closed = true
-      WHERE id IN (SELECT topic_id FROM closed_topic_ids)
+      WHERE id IN (SELECT topic_id FROM #{TABLE_PREFIX}closed_topic_ids)
     SQL
 
     Topic.exec_sql(sql, @closed_topic_ids)
