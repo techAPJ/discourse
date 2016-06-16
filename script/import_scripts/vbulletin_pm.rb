@@ -1,8 +1,16 @@
+# a:5:{i:463;s:15:"Bill Dungsroman";i:4156;s:14:"Coca Cola Zero";i:86;s:4:"Dirt";i:2829;s:5:"Glenn";i:2160;s:5:"JoshV";}
+# a:5:{i:4571;s:14:"Jonathan Crane";i:20;s:11:"Kevin Perry";i:551;s:10:"MikeOberly";i:34;s:12:"Rob O'Boston";i:244;s:6:"Rywill";}
+
+# Topic.private_messages.count
+# Post.private_posts.count
+#
+# Post.private_posts.delete_all
+# Topic.private_messages.delete_all
+
 require 'mysql2'
 require File.expand_path(File.dirname(__FILE__) + "/base.rb")
 require 'htmlentities'
-
-# vb_userban
+require 'php_serialize' # https://github.com/jqr/php-serialize
 
 class ImportScripts::VBulletin < ImportScripts::Base
   BATCH_SIZE = 2000
@@ -14,6 +22,26 @@ class ImportScripts::VBulletin < ImportScripts::Base
   ATTACHMENT_DIR = '/path/to/your/attachment/folder'
 
   def initialize
+
+    # touserarray = 'a:2:{s:2:"cc";a:1:{i:25356;s:10:"rpglover64";}s:3:"bcc";a:2:{i:2600;s:11:"Damien Neil";i:849;s:13:"Mike O\'Malley";}}'
+    # to_user_array = PHP.unserialize(touserarray)
+    #
+    # target_usernames = []
+    # to_user_array.each do |to_user|
+    #   if to_user[0] == "cc" || to_user[0] == "bcc"
+    #     to_user[1].each do |to_user_cc|
+    #       puts to_user_cc[0]
+    #       # username = User.find_by(id: user_id_from_imported_user_id(to_user_cc[0])).try(:username)
+    #       # target_usernames << username if username
+    #     end
+    #   else
+    #     username = User.find_by(id: user_id_from_imported_user_id(to_user[0])).try(:username)
+    #     target_usernames << username if username
+    #   end
+    # end
+    #
+    # exit
+
     super
 
     @old_username_to_new_usernames = {}
@@ -30,16 +58,16 @@ class ImportScripts::VBulletin < ImportScripts::Base
   end
 
   def execute
-    import_groups
-    import_users
-    import_categories
-    import_topics
-    import_posts
-    import_private_messages
-    import_attachments
+    # import_groups
+    # import_users
+    # import_categories
+    # import_topics
+    # import_posts
+    # import_attachments
 
-    # close_topics
-    post_process_posts
+    # import_private_messages
+    post_process_messages
+    # post_process_posts
   end
 
   def import_groups
@@ -241,7 +269,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
     puts "", "importing posts..."
 
     # make sure `firstpostid` is indexed
-    mysql_query("CREATE INDEX firstpostid_index ON #{TABLE_PREFIX}thread (firstpostid)")
+    # mysql_query("CREATE INDEX firstpostid_index ON #{TABLE_PREFIX}thread (firstpostid)")
 
     post_count = mysql_query("SELECT COUNT(postid) count FROM #{TABLE_PREFIX}post WHERE postid NOT IN (SELECT firstpostid FROM #{TABLE_PREFIX}thread)").first["count"]
 
@@ -276,42 +304,6 @@ class ImportScripts::VBulletin < ImportScripts::Base
         p
       end
     end
-  end
-
-  # find the uploaded file information from the db
-  def find_upload(post, attachment_id)
-    sql = "SELECT a.attachmentid attachment_id, a.userid user_id, a.filedataid file_id, a.filename filename,
-                  a.caption caption
-             FROM #{TABLE_PREFIX}attachment a
-            WHERE a.attachmentid = #{attachment_id}"
-    results = mysql_query(sql)
-
-    unless (row = results.first)
-      puts "Couldn't find attachment record for post.id = #{post.id}, import_id = #{post.custom_fields['import_id']}"
-      return nil
-    end
-
-    filename = File.join(ATTACHMENT_DIR, row['user_id'].to_s.split('').join('/'), "#{row['file_id']}.attach")
-    unless File.exists?(filename)
-      puts "Attachment file doesn't exist: #{filename}"
-      return nil
-    end
-    real_filename = row['filename']
-    real_filename.prepend SecureRandom.hex if real_filename[0] == '.'
-    upload = create_upload(post.user.id, filename, real_filename)
-
-    if upload.nil? || !upload.valid?
-      puts "Upload not valid :("
-      puts upload.errors.inspect if upload
-      return nil
-    end
-
-    return upload, real_filename
-  rescue Mysql2::Error => e
-    puts "SQL Error"
-    puts e.message
-    puts sql
-    return nil
   end
 
 
@@ -387,6 +379,8 @@ class ImportScripts::VBulletin < ImportScripts::Base
         end
 
         if title =~ /^Re:/
+          # puts "reply -- #{title}"
+          # puts "reply << title_username_of_pm_first_post -- #{title_username_of_pm_first_post[[title[4..-1], participants]]}"
 
           parent_id = title_username_of_pm_first_post[[title[3..-1], participants]]
           parent_id = title_username_of_pm_first_post[[title[4..-1], participants]] unless parent_id
@@ -404,6 +398,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
             end
           end
         else
+          # puts "new topic -- #{title}"
           title_username_of_pm_first_post[[title, participants]] ||= m['pmtextid']
         end
 
@@ -424,8 +419,45 @@ class ImportScripts::VBulletin < ImportScripts::Base
         skip ? nil : mapped
       end
     end
+
   end
 
+
+  # find the uploaded file information from the db
+  def find_upload(post, attachment_id)
+    sql = "SELECT a.attachmentid attachment_id, a.userid user_id, a.filedataid file_id, a.filename filename,
+                  a.caption caption
+             FROM #{TABLE_PREFIX}attachment a
+            WHERE a.attachmentid = #{attachment_id}"
+    results = mysql_query(sql)
+
+    unless (row = results.first)
+      puts "Couldn't find attachment record for post.id = #{post.id}, import_id = #{post.custom_fields['import_id']}"
+      return nil
+    end
+
+    filename = File.join(ATTACHMENT_DIR, row['user_id'].to_s.split('').join('/'), "#{row['file_id']}.attach")
+    unless File.exists?(filename)
+      puts "Attachment file doesn't exist: #{filename}"
+      return nil
+    end
+    real_filename = row['filename']
+    real_filename.prepend SecureRandom.hex if real_filename[0] == '.'
+    upload = create_upload(post.user.id, filename, real_filename)
+
+    if upload.nil? || !upload.valid?
+      puts "Upload not valid :("
+      puts upload.errors.inspect if upload
+      return nil
+    end
+
+    return upload, real_filename
+  rescue Mysql2::Error => e
+    puts "SQL Error"
+    puts e.message
+    puts sql
+    return nil
+  end
 
   def import_attachments
     puts '', 'importing attachments...'
@@ -505,27 +537,6 @@ class ImportScripts::VBulletin < ImportScripts::Base
     end
   end
 
-  def post_process_messages
-    puts "", "Postprocessing messages..."
-
-    current = 0
-    max = Post.private_posts.count
-
-    Post.private_posts.find_each do |post|
-      begin
-        new_raw = postprocess_post_raw(post.raw)
-        if new_raw != post.raw
-          post.raw = new_raw
-          post.save
-        end
-      rescue PrettyText::JavaScriptError
-        nil
-      ensure
-        print_status(current += 1, max)
-      end
-    end
-  end
-
   def preprocess_post_raw(raw)
     return "" if raw.blank?
 
@@ -568,9 +579,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
              .gsub("\u2603", ">")
 
     # [URL=...]...[/URL]
-    # raw = raw.gsub(/\[url="?(.+?)"?\](.+)\[\/url\]/i) { "[#{$2}](#{$1})" }
-    raw = raw.gsub(/\[url="?([^"]+?)"?\](.*?)\[\/url\]/i) { "[#{$2}](#{$1})" }
-    s.gsub!(/\[url="?(.+?)"?\](.+)\[\/url\]/i) { "[#{$2}](#{$1})" }
+    raw = raw.gsub(/\[url="?(.+?)"?\](.+)\[\/url\]/i) { "[#{$2}](#{$1})" }
 
     # [URL]...[/URL]
     # [MP3]...[/MP3]
@@ -596,11 +605,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
     # end
 
     # [QUOTE]...[/QUOTE]
-    # raw = raw.gsub(/\[quote\](.+?)\[\/quote\]/im) { "\n> #{$1}\n" }
-    raw.gsub!(/\[quote\](.+?)\[\/quote\]/im) { |quote|
-      quote.gsub!(/\[quote\](.+?)\[\/quote\]/im) { "\n#{$1}\n" }
-      quote.gsub!(/\n/) { "> #{$1}\n" }
-    }
+    raw = raw.gsub(/\[quote\](.+?)\[\/quote\]/im) { "\n> #{$1}\n" }
 
     # [QUOTE=<username>]...[/QUOTE]
     raw = raw.gsub(/\[quote=([^;\]]+)\](.+?)\[\/quote\]/im) do
@@ -616,28 +621,6 @@ class ImportScripts::VBulletin < ImportScripts::Base
 
     # [VIDEO=youtube;<id>]...[/VIDEO]
     raw = raw.gsub(/\[video=youtube;([^\]]+)\].*?\[\/video\]/i) { "\n//youtu.be/#{$1}\n" }
-
-
-    # More Additions ....
-
-    # [spoiler=Some hidden stuff]SPOILER HERE!![/spoiler]
-    raw.gsub!(/\[spoiler="?(.+?)"?\](.+?)\[\/spoiler\]/im) { "\n#{$1}\n[spoiler]#{$2}[/spoiler]\n" }
-
-    # [IMG][IMG]http://i63.tinypic.com/akga3r.jpg[/IMG][/IMG]
-    raw.gsub!(/\[IMG\]\[IMG\](.+?)\[\/IMG\]\[\/IMG\]/i) { "[IMG]#{$1}[/IMG]" }
-
-
-    # convert list tags to ul and list=1 tags to ol
-    # (basically, we're only missing list=a here...)
-    # (https://meta.discourse.org/t/phpbb-3-importer-old/17397)
-    raw.gsub!(/\[list\](.*?)\[\/list\]/m, '[ul]\1[/ul]')
-    raw.gsub!(/\[list=1\](.*?)\[\/list\]/m, '[ol]\1[/ol]')
-    raw.gsub!(/\[list\](.*?)\[\/list:u\]/m, '[ul]\1[/ul]')
-    raw.gsub!(/\[list=1\](.*?)\[\/list:o\]/m, '[ol]\1[/ol]')
-    # convert *-tags to li-tags so bbcode-to-md can do its magic on phpBB's lists:
-    raw.gsub!(/\[\*\](.*?)\[\/\*:m\]/, '[li]\1[/li]')
-    raw.gsub!(/\[\*\](.*?)\n/, '[li]\1[/li]')
-
 
     raw
   end

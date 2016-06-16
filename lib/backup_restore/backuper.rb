@@ -238,14 +238,22 @@ module BackupRestore
       log "Creating empty archive..."
       `tar --create --file #{tar_filename} --files-from /dev/null`
 
+      log "Archiving data dump..."
+      FileUtils.cd(File.dirname(@dump_filename)) do
+        log "here we go..."
+        `tar --append --dereference --file #{tar_filename} #{File.basename(@dump_filename)}`
+        log "DONE! wooohoooooo..."
+      end
+      # FileUtils.cd(File.dirname(@dump_filename)) do
+      #   log "here we go..."
+      #   pid = Process.spawn("tar --append --dereference --file #{tar_filename} #{File.basename(@dump_filename)}")
+      #   Process.wait pid
+      #   log "pid... #{pid}"
+      # end
+
       log "Archiving metadata..."
       FileUtils.cd(File.dirname(@meta_filename)) do
         `tar --append --dereference --file #{tar_filename} #{File.basename(@meta_filename)}`
-      end
-
-      log "Archiving data dump..."
-      FileUtils.cd(File.dirname(@dump_filename)) do
-        `tar --append --dereference --file #{tar_filename} #{File.basename(@dump_filename)}`
       end
 
       if @with_uploads
@@ -283,8 +291,8 @@ module BackupRestore
 
     def clean_up
       log "Cleaning stuff up..."
-      remove_tar_leftovers
-      remove_tmp_directory
+      # remove_tar_leftovers
+      # remove_tmp_directory
       unpause_sidekiq
       disable_readonly_mode if Discourse.readonly_mode?
       mark_backup_as_not_running

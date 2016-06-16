@@ -1,3 +1,9 @@
+GIT
+  remote: https://github.com/jqr/php-serialize.git
+  revision: 3b334d1ce4302e376fe3efc782722433fd134121
+  specs:
+    php-serialize (1.1.0)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -176,6 +182,7 @@ GEM
     multi_xml (0.5.5)
     multipart-post (2.0.0)
     mustache (1.0.3)
+    mysql2 (0.4.4)
     netrc (0.11.0)
     nokogiri (1.6.8)
       mini_portile2 (~> 2.1.0)
@@ -449,6 +456,7 @@ DEPENDENCIES
   mock_redis
   multi_json
   mustache
+  mysql2
   nokogiri
   oj
   omniauth
@@ -462,6 +470,7 @@ DEPENDENCIES
   onebox
   openid-redis-store
   pg
+  php-serialize!
   pry-nav
   pry-rails
   puma
