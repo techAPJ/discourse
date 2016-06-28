@@ -8,7 +8,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
   BATCH_SIZE = 2000
 
   # CHANGE THESE BEFORE RUNNING THE IMPORTER
-  DATABASE = "q23"
+  DATABASE = "q23-OLD"
   TABLE_PREFIX = "vb_"
   TIMEZONE = "America/Los_Angeles"
   ATTACHMENT_DIR = '/path/to/your/attachment/folder'
@@ -37,6 +37,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
     import_posts
     import_private_messages
     import_attachments
+    suspend_users
 
     # close_topics
     post_process_posts
@@ -568,9 +569,8 @@ class ImportScripts::VBulletin < ImportScripts::Base
              .gsub("\u2603", ">")
 
     # [URL=...]...[/URL]
-    # raw = raw.gsub(/\[url="?(.+?)"?\](.+)\[\/url\]/i) { "[#{$2}](#{$1})" }
-    raw = raw.gsub(/\[url="?([^"]+?)"?\](.*?)\[\/url\]/i) { "[#{$2}](#{$1})" }
-    s.gsub!(/\[url="?(.+?)"?\](.+)\[\/url\]/i) { "[#{$2}](#{$1})" }
+    raw.gsub!(/\[url="?([^"]+?)"?\](.*?)\[\/url\]/i) { "[#{$2}](#{$1})" }
+    raw.gsub!(/\[url="?(.+?)"?\](.+)\[\/url\]/i) { "[#{$2}](#{$1})" }
 
     # [URL]...[/URL]
     # [MP3]...[/MP3]
@@ -585,15 +585,6 @@ class ImportScripts::VBulletin < ImportScripts::Base
       end
       "@#{old_username}"
     end
-
-    # [MENTION=<user_id>]<username>[/MENTION]
-    # raw = raw.gsub(/\[mention="?(\d+)"?\](.+?)\[\/mention\]/i) do
-    #   user_id, old_username = $1, $2
-    #   if user = @users.select { |u| u[:userid] == user_id }.first
-    #     old_username = @old_username_to_new_usernames[user[:username]] || user[:username]
-    #   end
-    #   "@#{old_username}"
-    # end
 
     # [QUOTE]...[/QUOTE]
     # raw = raw.gsub(/\[quote\](.+?)\[\/quote\]/im) { "\n> #{$1}\n" }
@@ -635,6 +626,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
     raw.gsub!(/\[list\](.*?)\[\/list:u\]/m, '[ul]\1[/ul]')
     raw.gsub!(/\[list=1\](.*?)\[\/list:o\]/m, '[ol]\1[/ol]')
     # convert *-tags to li-tags so bbcode-to-md can do its magic on phpBB's lists:
+    raw.gsub!(/\[\*\]\n/, '')
     raw.gsub!(/\[\*\](.*?)\[\/\*:m\]/, '[li]\1[/li]')
     raw.gsub!(/\[\*\](.*?)\n/, '[li]\1[/li]')
 
@@ -711,6 +703,38 @@ class ImportScripts::VBulletin < ImportScripts::Base
 
     raw
   end
+
+  def suspend_users
+    puts '', "updating banned users"
+
+    banned = 0
+    failed = 0
+    total = mysql_query("SELECT count(*) count FROM #{TABLE_PREFIX}userban").first['count']
+
+    system_user = Discourse.system_user
+
+    mysql_query("SELECT userid, bandate FROM #{TABLE_PREFIX}userban").each do |b|
+      user = User.find_by_email(b['email'])
+      if user
+        user.suspended_at = parse_timestamp(user["bandate"])
+        user.suspended_till = 200.years.from_now
+
+        if user.save
+          StaffActionLogger.new(system_user).log_user_suspend(user, "banned during initial import")
+          banned += 1
+        else
+          puts "Failed to suspend user #{user.username}. #{user.errors.try(:full_messages).try(:inspect)}"
+          failed += 1
+        end
+      else
+        puts "Not found: #{b['email']}"
+        failed += 1
+      end
+
+      print_status banned + failed, total
+    end
+  end
+
 
   def parse_timestamp(timestamp)
     Time.zone.at(@tz.utc_to_local(timestamp))
