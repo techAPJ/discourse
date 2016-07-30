@@ -3,8 +3,9 @@ require File.expand_path(File.dirname(__FILE__) + "/base.rb")
 
 class ImportScripts::Drupal < ImportScripts::Base
 
-  DRUPAL_DB = ENV['DRUPAL_DB'] || "newsite3"
-  VID = ENV['DRUPAL_VID'] || 1
+  DRUPAL_DB = ENV['DRUPAL_DB'] || "wealthforums"
+  VID = ENV['DRUPAL_VID'] || 26
+  BATCH_SIZE = 2000
 
   def initialize
     super
@@ -18,13 +19,11 @@ class ImportScripts::Drupal < ImportScripts::Base
   end
 
   def categories_query
-    @client.query("SELECT tid, name, description FROM taxonomy_term_data WHERE vid = #{VID}")
+    @client.query("SELECT tid, name, description FROM term_data WHERE vid = #{VID}")
   end
 
   def execute
-    create_users(@client.query("SELECT uid id, name, mail email, created FROM users;")) do |row|
-      {id: row['id'], username: row['name'], email: row['email'], created_at: Time.zone.at(row['created'])}
-    end
+    import_users
 
     # You'll need to edit the following query for your Drupal install:
     #
@@ -39,19 +38,43 @@ class ImportScripts::Drupal < ImportScripts::Base
     # and will later import all the comments/replies for each node.
     # You will need to figure out what the type names are on your install and edit the queries to match.
     if ENV['DRUPAL_IMPORT_BLOG']
-      create_blog_topics
+      # create_blog_topics
     end
 
     create_forum_topics
 
     create_replies
+  end
 
-    begin
-      create_admin(email: 'neil.lalonde@discourse.org', username: UserNameSuggester.suggest('neil'))
-    rescue => e
-      puts '', "Failed to create admin user"
-      puts e.message
+  def import_users
+
+    # create_users(@client.query("SELECT uid id, name, mail email, created FROM users;")) do |row|
+    #   {id: row['id'], username: row['name'], email: row['email'], created_at: Time.zone.at(row['created'])}
+    # end
+
+    puts '', "creating users"
+
+    total_count = @client.query("SELECT count(*) count FROM users;").first['count']
+
+    batches(BATCH_SIZE) do |offset|
+      results = @client.query(
+        "SELECT uid id, name, mail email, created
+         FROM users
+         LIMIT #{BATCH_SIZE}
+         OFFSET #{offset};", cache_rows: false)
+
+      break if results.size < 1
+
+      next if all_records_exist? :users, results.map {|u| u["id"].to_i}
+
+      create_users(results, total: total_count, offset: offset) do |user|
+        { id: user['id'],
+          email: user['email'],
+          username: user['name'],
+          created_at: Time.zone.at(user['created']) }
+      end
     end
+
   end
 
   def create_blog_topics
@@ -92,28 +115,29 @@ class ImportScripts::Drupal < ImportScripts::Base
 
     total_count = @client.query("
         SELECT COUNT(*) count
-          FROM forum_index fi, node n
+          FROM node n
          WHERE n.type = 'forum'
-           AND fi.nid = n.nid
            AND n.status = 1;").first['count']
 
     batch_size = 1000
 
     batches(batch_size) do |offset|
       results = @client.query("
-        SELECT fi.nid nid,
-               fi.title title,
-               fi.tid tid,
+        SELECT n.nid nid,
+               n.title title,
                n.uid uid,
-               fi.created created,
-               fi.sticky sticky,
-               f.body_value body
-          FROM forum_index fi,
-               node n,
-               field_data_body f
+               n.created created,
+               n.sticky sticky,
+               nr.body body,
+               f.tid tid
+          FROM node n,
+               node_revisions nr,
+               forum f
          WHERE n.type = 'forum'
-           AND fi.nid = n.nid
-           AND n.nid = f.entity_id
+           AND n.nid = nr.nid
+           AND n.vid = nr.vid
+           AND n.nid = f.nid
+           AND n.vid = f.vid
            AND n.status = 1
          LIMIT #{batch_size}
         OFFSET #{offset};
@@ -142,26 +166,24 @@ class ImportScripts::Drupal < ImportScripts::Base
 
     total_count = @client.query("
         SELECT COUNT(*) count
-          FROM comment c,
+          FROM comments c,
                node n
          WHERE n.nid = c.nid
            AND c.status = 1
-           AND n.type IN ('blog', 'forum')
+           AND n.type = 'forum'
            AND n.status = 1;").first['count']
 
     batch_size = 1000
 
     batches(batch_size) do |offset|
       results = @client.query("
-        SELECT c.cid, c.pid, c.nid, c.uid, c.created,
-               f.comment_body_value body
-          FROM comment c,
-               field_data_comment_body f,
+        SELECT c.cid, c.pid, c.nid, c.uid,
+               c.timestamp created, c.comment body
+          FROM comments c,
                node n
-         WHERE c.cid = f.entity_id
-           AND n.nid = c.nid
+         WHERE n.nid = c.nid
            AND c.status = 1
-           AND n.type IN ('blog', 'forum')
+           AND n.type = 'forum'
            AND n.status = 1
          LIMIT #{batch_size}
         OFFSET #{offset};
@@ -199,3 +221,6 @@ end
 if __FILE__==$0
   ImportScripts::Drupal.new.perform
 end
+
+
+# AND n.type IN ('blog', 'forum')
