@@ -169,7 +169,7 @@ class ImportScripts::Drupal < ImportScripts::Base
           FROM comments c,
                node n
          WHERE n.nid = c.nid
-           AND c.status = 1
+           AND c.status = 0
            AND n.type = 'forum'
            AND n.status = 1;").first['count']
 
@@ -182,7 +182,7 @@ class ImportScripts::Drupal < ImportScripts::Base
           FROM comments c,
                node n
          WHERE n.nid = c.nid
-           AND c.status = 1
+           AND c.status = 0
            AND n.type = 'forum'
            AND n.status = 1
          LIMIT #{batch_size}
