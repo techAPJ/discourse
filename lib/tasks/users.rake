@@ -37,3 +37,39 @@ task "users:change_post_ownership", [:old_username, :new_username, :archetype] =
   end
   puts "", "#{i} posts ownership changed!", ""
 end
+
+# bundle exec rake users:batch_remap_email['mysite.co','yoursite.co']
+# https://meta.discourse.org/t/tried-to-change-domain-caused-my-user-email-to-change-too-what-to-do/56519/9?u=techapj
+desc 'Batch remap user email address'
+task 'users:batch_remap_email', [:find, :replace] => [:environment] do |_,args|
+  require 'highline/import'
+
+  find = args[:find]
+  replace = args[:replace]
+  if !find || !replace
+    puts "ERROR: Expecting rake users:batch_remap_email['find','replace']"
+    exit 1
+  else
+    confirm_replace = ask("Are you sure you want to remap all email addresses matching '#{find}' with '#{replace}'? (Y/n)  ")
+    exit 1 unless (confirm_replace == "" || confirm_replace.downcase == 'y')
+  end
+
+  puts "Remapping email addresses"
+  i = 0
+  User.where("email LIKE ?", "%#{find}%").each do |u|
+    new_email = u.email.dup
+    new_email = new_email.gsub!(/#{Regexp.escape(find)}/, replace) || new_email
+
+    if new_email != u.email
+      u.email = new_email
+      u.email_tokens.create(email: u.email)
+      u.activate
+      u.save
+      putc "."
+      i += 1
+    end
+  end
+  i
+
+  puts "", "#{i} email addresses remapped!", ""
+end
