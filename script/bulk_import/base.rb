@@ -15,7 +15,7 @@ class BulkImport::Base
   def initialize
     db = ActiveRecord::Base.connection_config
     @encoder = PG::TextEncoder::CopyRow.new
-    @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port])
+    @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port], password: "discourse")
 
     @markdown = Redcarpet::Markdown.new(
       Redcarpet::Render::HTML,
@@ -218,8 +218,8 @@ class BulkImport::Base
       group[:name] = group_name
     end
 
-    group[:title]      = group[:title].scrub.strip.presence
-    group[:bio_raw]    = group[:bio_raw].scrub.strip.presence
+    group[:title]      = group[:title].scrub.strip.presence if group[:title].present?
+    group[:bio_raw]    = group[:bio_raw].scrub.strip.presence if group[:bio_raw].present?
     group[:bio_cooked] = pre_cook(group[:bio_raw]) if group[:bio_raw].present?
     group[:created_at] ||= NOW
     group[:updated_at] ||= group[:created_at]
@@ -296,6 +296,7 @@ class BulkImport::Base
   def process_user_profile(user_profile)
     user_profile[:bio_raw]    = (user_profile[:bio_raw].presence || "").scrub.strip.presence
     user_profile[:bio_cooked] = pre_cook(user_profile[:bio_raw]) if user_profile[:bio_raw].present?
+    user_profile[:views] ||= 0
     user_profile
   end
 
@@ -470,7 +471,9 @@ class BulkImport::Base
     # [SPOILER=Some hidden stuff]SPOILER HERE!![/SPOILER]
     raw.gsub!(/\[SPOILER="?(.+?)"?\](.+?)\[\/SPOILER\]/im) { "\n#{$1}\n[spoiler]#{$2}[/spoiler]\n" }
 
-    raw
+    f_raw = CGI.unescapeHTML(raw)
+    f_raw
+    # raw
   end
 
   def create_records(rows, name, columns)
