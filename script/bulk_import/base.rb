@@ -15,7 +15,7 @@ class BulkImport::Base
   def initialize
     db = ActiveRecord::Base.connection_config
     @encoder = PG::TextEncoder::CopyRow.new
-    @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port])
+    @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port], password: 'discourse')
 
     @markdown = Redcarpet::Markdown.new(
       Redcarpet::Render::HTML,
@@ -127,7 +127,7 @@ class BulkImport::Base
     @raw_connection.exec("SELECT setval('#{Category.sequence_name}', #{@last_category_id})")
     @raw_connection.exec("SELECT setval('#{Topic.sequence_name}', #{@last_topic_id})")
     @raw_connection.exec("SELECT setval('#{Post.sequence_name}', #{@last_post_id})")
-    @raw_connection.exec("SELECT setval('#{PostAction.sequence_name}', #{@last_post_action_id})")
+    # @raw_connection.exec("SELECT setval('#{PostAction.sequence_name}', #{@last_post_action_id})")
   end
 
   def group_id_from_imported_id(id); @groups[id.to_s]; end
@@ -139,7 +139,7 @@ class BulkImport::Base
   def post_number_from_imported_id(id); @post_number_by_post_id[post_id_from_imported_id(id)]; end
   def topic_id_from_imported_post_id(id); @topic_id_by_post_id[post_id_from_imported_id(id)]; end
 
-  GROUP_COLUMNS ||= %i{
+ GROUP_COLUMNS ||= %i{
     id name title bio_raw bio_cooked created_at updated_at
   }
 

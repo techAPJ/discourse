@@ -45,13 +45,16 @@ class BulkImport::VBulletin < BulkImport::Base
     "utf8"     => Encoding::UTF_8,
   }
 
+  CATEGORIES_TO_IMPORT = [20,30,118,31,108,119,102,14,15,66,86,19,100,75,12,54,34,45,67,4] # vB_category_map
+
   def initialize
     super
 
-    host     = ENV["DB_HOST"]
+    host     = ENV["DB_HOST"] || "localhost"
     username = ENV["DB_USERNAME"] || "root"
-    password = ENV["DB_PASSWORD"]
-    database = ENV["DB_NAME"] || "vbulletin"
+    password = ENV["DB_PASSWORD"] || "jalan"
+    database = ENV["DB_NAME"] || "catholic"
+    # charset  = ENV["DB_CHARSET"] || "latin1"
     charset  = ENV["DB_CHARSET"] || "utf8"
 
     @html_entities = HTMLEntities.new
@@ -78,9 +81,9 @@ class BulkImport::VBulletin < BulkImport::Base
   end
 
   def execute
-    import_groups
+    # import_groups
     import_users
-    import_group_users
+    # import_group_users
 
     import_user_emails
     import_user_stats
@@ -93,11 +96,11 @@ class BulkImport::VBulletin < BulkImport::Base
     import_topics
     import_posts
 
-    import_likes
+    # import_likes
 
-    import_private_topics
-    import_topic_allowed_users
-    import_private_posts
+    # import_private_topics
+    # import_topic_allowed_users
+    # import_private_posts
   end
 
   def import_groups
@@ -281,23 +284,24 @@ class BulkImport::VBulletin < BulkImport::Base
         SELECT forumid, parentid, title, description, displayorder
           FROM forum
          WHERE forumid > #{@last_imported_category_id}
+           AND forumid IN (#{CATEGORIES_TO_IMPORT.join(',')})
       ORDER BY forumid
     SQL
     ).to_a
 
     return if categories.empty?
 
-    parent_categories   = categories.select { |c| c[1] == -1 }
-    children_categories = categories.select { |c| c[1] != -1 }
+    parent_categories   = categories.select { |c| c[1] == 1 }
+    children_categories = categories.select { |c| c[1] != 1 }
 
-    parent_category_ids = Set.new parent_categories.map { |c| c[0] }
+    # parent_category_ids = Set.new parent_categories.map { |c| c[0] }
 
     # cut down the tree to only 2 levels of categories
-    children_categories.each do |cc|
-      until parent_category_ids.include?(cc[1])
-        cc[1] = categories.find { |c| c[0] == cc[1] }[1]
-      end
-    end
+    # children_categories.each do |cc|
+    #   until parent_category_ids.include?(cc[1])
+    #     cc[1] = categories.find { |c| c[0] == cc[1] }[1]
+    #   end
+    # end
 
     puts "Importing parent categories..."
     create_categories(parent_categories) do |row|
@@ -311,6 +315,7 @@ class BulkImport::VBulletin < BulkImport::Base
 
     puts "Importing children categories..."
     create_categories(children_categories) do |row|
+      next unless CATEGORIES_TO_IMPORT.include?(row[0])
       {
         imported_id: row[0],
         name: normalize_text(row[2]),
@@ -328,11 +333,13 @@ class BulkImport::VBulletin < BulkImport::Base
         SELECT threadid, title, forumid, postuserid, open, dateline, views, visible, sticky
           FROM thread
          WHERE threadid > #{@last_imported_topic_id}
+           AND forumid IN (#{CATEGORIES_TO_IMPORT.join(',')})
            AND EXISTS (SELECT 1 FROM post WHERE post.threadid = thread.threadid)
       ORDER BY threadid
     SQL
 
     create_topics(topics) do |row|
+      next unless CATEGORIES_TO_IMPORT.include?(row[2])
       created_at = Time.zone.at(row[5])
 
       t = {
@@ -356,23 +363,25 @@ class BulkImport::VBulletin < BulkImport::Base
     puts "Importing posts..."
 
     posts = mysql_stream <<-SQL
-        SELECT postid, post.threadid, parentid, userid, post.dateline, post.visible, pagetext
+        SELECT postid, post.threadid, parentid, userid, post.dateline, post.visible, pagetext, thread.forumid
                #{", post_thanks_amount" if @has_post_thanks}
 
           FROM post
           JOIN thread ON thread.threadid = post.threadid
          WHERE postid > #{@last_imported_post_id}
+           AND thread.forumid IN (#{CATEGORIES_TO_IMPORT.join(',')})
       ORDER BY postid
     SQL
 
     create_posts(posts) do |row|
+      next unless CATEGORIES_TO_IMPORT.include?(row[7])
       topic_id = topic_id_from_imported_id(row[1])
       replied_post_topic_id = topic_id_from_imported_post_id(row[2])
       reply_to_post_number = topic_id == replied_post_topic_id ? post_number_from_imported_id(row[2]) : nil
 
       post = {
         imported_id: row[0],
-        topic_id: topic_id,
+        topic_id: topic_id.to_i,
         reply_to_post_number: reply_to_post_number,
         user_id: user_id_from_imported_id(row[3]),
         created_at: Time.zone.at(row[4]),
@@ -503,6 +512,20 @@ class BulkImport::VBulletin < BulkImport::Base
   end
 
   def normalize_text(text)
+    @html_entities.decode(normalize_charset(text.presence || "").scrub)
+  end
+
+  def normalize_text(text)
+    if text
+      if text =~ /\000/
+        puts text
+        text = text.delete("\000")
+      end
+      # text = text.force_encoding('ISO-8859-1').encode('UTF-8')
+      # return utf_8_string
+    else
+      return "<empty>"
+    end
     @html_entities.decode(normalize_charset(text.presence || "").scrub)
   end
 
