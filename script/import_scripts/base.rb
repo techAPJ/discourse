@@ -1,4 +1,4 @@
-if ARGV.include?('bbcode-to-md')
+if true
   # Replace (most) bbcode with markdown before creating posts.
   # This will dramatically clean up the final posts in Discourse.
   #
@@ -97,7 +97,8 @@ class ImportScripts::Base
   end
 
   def use_bbcode_to_md?
-    ARGV.include?("bbcode-to-md")
+    # ARGV.include?("bbcode-to-md")
+    true
   end
 
   # Implementation will do most of its work in its execute method.

@@ -3,14 +3,14 @@ require File.expand_path(File.dirname(__FILE__) + "/base.rb")
 require 'htmlentities'
 
 class ImportScripts::VBulletin < ImportScripts::Base
-  BATCH_SIZE = 1000
-  DBPREFIX = "vb_"
+  BATCH_SIZE = 2000
+  DBPREFIX = ""
   ROOT_NODE = 2
 
   # CHANGE THESE BEFORE RUNNING THE IMPORTER
-  DATABASE = "yourforum"
+  DATABASE = "wardragons"
   TIMEZONE = "America/Los_Angeles"
-  ATTACHMENT_DIR = '/home/discourse/yourforum/customattachments/'
+  ATTACHMENT_DIR = '/Users/techapj/wardragons/wdattachments/'
   AVATAR_DIR = '/home/discourse/yourforum/avatars/'
 
   def initialize
@@ -26,7 +26,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
       host: "localhost",
       username: "root",
       database: DATABASE,
-      password: "password"
+      password: ""
     )
 
   end
@@ -485,6 +485,8 @@ class ImportScripts::VBulletin < ImportScripts::Base
 
     # [URL=...]...[/URL]
     raw.gsub!(/\[url="?(.+?)"?\](.+?)\[\/url\]/i) { "<a href=\"#{$1}\">#{$2}</a>" }
+    raw.gsub!(/\[url="?([^"]+?)"?\](.*?)\[\/url\]/im) { "[#{$2.strip}](#{$1})" }
+    raw.gsub!(/\[url="?(.+?)"?\](.+)\[\/url\]/im) { "[#{$2.strip}](#{$1})" }
 
     # [URL]...[/URL]
     # [MP3]...[/MP3]
@@ -518,8 +520,18 @@ class ImportScripts::VBulletin < ImportScripts::Base
     raw.gsub! /\[font=.*?\](.*?)\[\/font\]/im, '\1'
     raw.gsub! /\[FONT=.*?\](.*?)\[\/FONT\]/im, '\1'
 
+    raw.gsub! /\[SIZE=.*?\](.*?)\[\/SIZE\]/im, '\1'
+    raw.gsub! /\[h=.*?\](.*?)\[\/h\]/im, '\1'
+
     # [CENTER]...[/CENTER]
     raw.gsub! /\[CENTER\](.*?)\[\/CENTER\]/im, '\1'
+
+    # [INDENT]...[/INDENT]
+    raw.gsub! /\[INDENT\](.*?)\[\/INDENT\]/im, '\1'
+    raw.gsub! /\[TABLE\](.*?)\[\/TABLE\]/im, '\1'
+    raw.gsub! /\[TR\](.*?)\[\/TR\]/im, '\1'
+    raw.gsub! /\[TD\](.*?)\[\/TD\]/im, '\1'
+    raw.gsub! /\[TD="?.*?"?\](.*?)\[\/TD\]/im, '\1'
 
     # fix LIST
     raw.gsub! /\[LIST\](.*?)\[\/LIST\]/im, '<ul>\1</ul>'
@@ -543,6 +555,30 @@ class ImportScripts::VBulletin < ImportScripts::Base
 
     # [VIDEO=youtube;<id>]...[/VIDEO]
     raw = raw.gsub(/\[video=youtube;([^\]]+)\].*?\[\/video\]/i) { "\n//youtu.be/#{$1}\n" }
+
+
+    # More Additions ....
+
+    # [spoiler=Some hidden stuff]SPOILER HERE!![/spoiler]
+    raw.gsub!(/\[spoiler="?(.+?)"?\](.+?)\[\/spoiler\]/im) { "\n#{$1}\n[spoiler]#{$2}[/spoiler]\n" }
+
+    # [IMG]...[/IMG]
+    s.gsub!(/\[\/?img\]/i, "")
+    # [IMG][IMG]http://i63.tinypic.com/akga3r.jpg[/IMG][/IMG]
+    raw.gsub!(/\[IMG\]\[IMG\](.+?)\[\/IMG\]\[\/IMG\]/i) { "[IMG]#{$1}[/IMG]" }
+
+    # convert list tags to ul and list=1 tags to ol
+    # (basically, we're only missing list=a here...)
+    # (https://meta.discourse.org/t/phpbb-3-importer-old/17397)
+    raw.gsub!(/\[list\](.*?)\[\/list\]/im, '[ul]\1[/ul]')
+    raw.gsub!(/\[list=1\](.*?)\[\/list\]/im, '[ol]\1[/ol]')
+    raw.gsub!(/\[list\](.*?)\[\/list:u\]/im, '[ul]\1[/ul]')
+    raw.gsub!(/\[list=1\](.*?)\[\/list:o\]/im, '[ol]\1[/ol]')
+    # convert *-tags to li-tags so bbcode-to-md can do its magic on phpBB's lists:
+    raw.gsub!(/\[\*\]\n/, '')
+    raw.gsub!(/\[\*\](.*?)\[\/\*:m\]/, '[li]\1[/li]')
+    raw.gsub!(/\[\*\](.*?)\n/, '[li]\1[/li]')
+    raw.gsub!(/\[\*=1\]/, '')
 
     raw
   end
