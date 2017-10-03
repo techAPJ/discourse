@@ -1,3 +1,10 @@
+GIT
+  remote: git://github.com/nlalonde/ruby-bbcode-to-md.git
+  revision: 3b9aaf2b634704a415788c94f7dee93a81f616b5
+  specs:
+    ruby-bbcode-to-md (0.0.14)
+      activesupport
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -171,6 +178,7 @@ GEM
     multi_xml (0.6.0)
     multipart-post (2.0.0)
     mustache (1.0.5)
+    mysql2 (0.4.9)
     nokogiri (1.8.1)
       mini_portile2 (~> 2.3.0)
     nokogumbo (1.4.13)
@@ -436,6 +444,7 @@ DEPENDENCIES
   mock_redis
   multi_json
   mustache
+  mysql2
   nokogiri
   oga
   oj
@@ -470,6 +479,7 @@ DEPENDENCIES
   rspec-rails
   rtlit
   rubocop
+  ruby-bbcode-to-md!
   ruby-prof
   ruby-readability
   sanitize

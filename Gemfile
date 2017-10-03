@@ -177,7 +177,8 @@ gem 'logster'
 gem 'sassc', require: false
 
 gem 'mysql2'
-gem 'ruby-bbcode-to-md', github: 'nlalonde/ruby-bbcode-to-md
+
+gem 'ruby-bbcode-to-md', github: 'nlalonde/ruby-bbcode-to-md'
 
 if ENV["IMPORT"] == "1"
   gem 'mysql2'

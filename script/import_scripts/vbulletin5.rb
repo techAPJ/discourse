@@ -563,7 +563,7 @@ class ImportScripts::VBulletin < ImportScripts::Base
     raw.gsub!(/\[spoiler="?(.+?)"?\](.+?)\[\/spoiler\]/im) { "\n#{$1}\n[spoiler]#{$2}[/spoiler]\n" }
 
     # [IMG]...[/IMG]
-    s.gsub!(/\[\/?img\]/i, "")
+    raw.gsub!(/\[\/?img\]/i, "")
     # [IMG][IMG]http://i63.tinypic.com/akga3r.jpg[/IMG][/IMG]
     raw.gsub!(/\[IMG\]\[IMG\](.+?)\[\/IMG\]\[\/IMG\]/i) { "[IMG]#{$1}[/IMG]" }
 
@@ -579,6 +579,40 @@ class ImportScripts::VBulletin < ImportScripts::Base
     raw.gsub!(/\[\*\](.*?)\[\/\*:m\]/, '[li]\1[/li]')
     raw.gsub!(/\[\*\](.*?)\n/, '[li]\1[/li]')
     raw.gsub!(/\[\*=1\]/, '')
+
+
+    # /\[IMG2=JSON\](.*?)\[\/IMG2\]/im
+    # [IMG2=JSON]{"data-align":"none","data-size":"full","height":"222","width":"247","src":"http:\/\/i.imgur.com\/NVyM9bc.png"}[/IMG2]
+    # debug = 0
+    raw = raw.gsub(/\[IMG2=JSON\](.*?)\[\/IMG2\]/im) do
+      # debug = 1
+      # puts raw
+
+      # old_username, quote = $1, $2
+
+      # if @old_username_to_new_usernames.has_key?(old_username)
+      #   old_username = @old_username_to_new_usernames[old_username]
+      # end
+      # "\n[quote=\"#{old_username}\"]\n#{quote}\n[/quote]\n"
+
+      # puts "$1 -- #{JSON.parse($1)['src']}"
+      # exit
+
+      begin
+        "\n[IMG]#{URI.unescape(JSON.parse($1)['src'])}[/IMG]\n"
+      rescue
+        ""
+      end
+    end
+
+    # if debug == 1
+    #   puts raw
+    #   exit
+    # end
+
+
+    # [ATTACH=JSON]{"data-align":"none","data-size":"large","data-attachmentid":98009}[/ATTACH]
+    raw.gsub!(/\[ATTACH=JSON\](.*?)\[\/ATTACH\]/im, "")# remove attachments
 
     raw
   end
