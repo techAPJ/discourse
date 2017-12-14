@@ -50,6 +50,15 @@ module ImportScripts::Mbox
       }
 
       @database.insert_category(category)
+
+      if category[:name] == "swift-evolution"
+        sub_category = {
+          name: "Pitches"
+        }
+
+        @database.insert_category(sub_category)
+      end
+
       category
     end
 
@@ -60,12 +69,13 @@ module ImportScripts::Mbox
         from_email, from_display_name = receiver.parse_from_field(parsed_email)
         body, elided, format = receiver.select_body
         reply_message_ids = extract_reply_message_ids(parsed_email)
+        subject = extract_subject(receiver, category_name)
 
         email = {
           msg_id: msg_id,
           from_email: from_email,
           from_name: from_display_name,
-          subject: extract_subject(receiver, category_name),
+          subject: subject,
           email_date: parsed_email.date&.to_s,
           raw_message: receiver.raw_email,
           body: body,
@@ -73,7 +83,7 @@ module ImportScripts::Mbox
           format: format,
           attachment_count: receiver.attachments.count,
           charset: parsed_email.charset&.downcase,
-          category: category_name,
+          category: extract_cat(subject, category_name),
           filename: File.basename(filename),
           first_line_number: first_line_number,
           last_line_number: last_line_number
@@ -81,6 +91,16 @@ module ImportScripts::Mbox
 
         @database.insert_email(email)
         @database.insert_replies(msg_id, reply_message_ids) unless reply_message_ids.empty?
+      end
+    end
+
+    def extract_cat(subject, category_name)
+      return category_name unless category_name == "swift-evolution"
+
+      if subject =~ /\[Pitch\]|^Pitch:/i
+        return "Pitches"
+      else
+        return category_name
       end
     end
 

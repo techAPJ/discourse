@@ -60,7 +60,7 @@ gem 'aws-sdk-s3', require: false
 gem 'excon', require: false
 gem 'unf', require: false
 
-gem 'email_reply_trimmer', '0.1.8'
+gem 'email_reply_trimmer', path: '../projects/email_reply_trimmer'
 
 # Forked until https://github.com/toy/image_optim/pull/149 is merged
 gem 'discourse_image_optim', require: 'image_optim'
@@ -178,6 +178,8 @@ gem 'logstash-logger', require: false
 gem 'logster'
 
 gem 'sassc', require: false
+
+gem 'sqlite3'
 
 if ENV["IMPORT"] == "1"
   gem 'mysql2'

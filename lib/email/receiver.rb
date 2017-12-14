@@ -247,8 +247,19 @@ module Email
             format_flowed: !!(text_content_type =~ /format\s*=\s*["']?flowed["']?/i),
             delete_flowed_space: !!(text_content_type =~ /DelSp\s*=\s*["']?yes["']?/i)
           }
-          text = PlainTextToMarkdown.new(text, converter_opts).to_markdown
-          elided_text = PlainTextToMarkdown.new(elided_text, converter_opts).to_markdown
+          begin
+            text = PlainTextToMarkdown.new(text, converter_opts).to_markdown
+            # elided_text = PlainTextToMarkdown.new(elided_text, converter_opts).to_markdown
+          rescue
+            # next
+          end
+
+          begin
+            # text = PlainTextToMarkdown.new(text, converter_opts).to_markdown
+            elided_text = PlainTextToMarkdown.new(elided_text, converter_opts).to_markdown
+          rescue
+            # next
+          end
         end
       end
 
