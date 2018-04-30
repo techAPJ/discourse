@@ -4,10 +4,10 @@ require "rake"
 
 class BulkImport::Vanilla < BulkImport::Base
 
-  VANILLA_DB = "dbname"
+  VANILLA_DB = "plex"
   TABLE_PREFIX = "GDN_"
   ATTACHMENTS_BASE_DIR = "/my/absolute/path/to/from_vanilla/uploads"
-  BATCH_SIZE = 1000
+  BATCH_SIZE = 1
   CONVERT_HTML = true
 
   SUSPENDED_TILL ||= Date.new(3000, 1, 1)
@@ -40,8 +40,8 @@ class BulkImport::Vanilla < BulkImport::Base
     Discourse::Application.load_tasks
     Rake::Task["import:ensure_consistency"].invoke
 
-    import_avatars # slow
-    create_permalinks # TODO: do it bulk style
+    # import_avatars # slow
+    # create_permalinks # TODO: do it bulk style
   end
 
   def execute
@@ -340,12 +340,12 @@ class BulkImport::Vanilla < BulkImport::Base
   def import_topics
     puts "", "Importing topics..."
 
-    topics_sql = "SELECT DiscussionID, CategoryID, Name, Body, DateInserted, InsertUserID, Announce
+    topics_sql = mysql_stream("SELECT DiscussionID, CategoryID, Name, Body, DateInserted, InsertUserID, Announce
       FROM #{TABLE_PREFIX}Discussion
       WHERE DiscussionID > #{@last_imported_topic_id}
-      ORDER BY DiscussionID ASC"
+      ORDER BY DiscussionID ASC")
 
-    create_topics(mysql_stream(topics_sql)) do |row|
+    create_topics(topics_sql) do |row|
       {
         imported_id: row["DiscussionID"],
         title: normalize_text(row["Name"]),
@@ -359,7 +359,7 @@ class BulkImport::Vanilla < BulkImport::Base
 
     puts "", "importing first posts..."
 
-    create_posts(mysql_stream(topics_sql)) do |row|
+    create_posts(topics_sql) do |row|
       {
         imported_id: "d-" + row['DiscussionID'].to_s,
         topic_id: topic_id_from_imported_id(row["DiscussionID"]),
@@ -371,7 +371,7 @@ class BulkImport::Vanilla < BulkImport::Base
 
     puts '', 'converting deep categories to tags...'
 
-    create_topic_tags(mysql_stream(topics_sql)) do |row|
+    create_topic_tags(topics_sql) do |row|
       next unless mapping = @category_mappings[row['CategoryID']]
 
       {
@@ -560,7 +560,7 @@ class BulkImport::Vanilla < BulkImport::Base
     # post id is sometimes prefixed with "c-"
     raw.gsub!(/\[QUOTE="([^;]+);c-(\d+)"\]/i) { "[QUOTE=#{$1};#{$2}]" }
 
-    raw
+    normalize_text(raw)
   end
 
   def staff_guardian
@@ -578,3 +578,10 @@ class BulkImport::Vanilla < BulkImport::Base
 end
 
 BulkImport::Vanilla.new.start
+
+
+# SELECT Email FROM GDN_User group by Email having count(*) >= 2
+# SELECT Email FROM GDN_User group by Email
+# DELETE t1 FROM GDN_User t1 INNER JOIN GDN_User t2 WHERE t1.UserID < t2.UserID AND t1.Email = t2.Email;
+
+# SELECT * FROM GDN_Comment WHERE LENGTH(Body) != CHAR_LENGTH(Body)

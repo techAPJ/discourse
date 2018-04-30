@@ -578,22 +578,37 @@ class BulkImport::Base
     process_method_name = "process_#{name}"
     sql = "COPY #{name.pluralize} (#{columns.map { |c| "\"#{c}\"" }.join(",")}) FROM STDIN"
 
+    puts sql
+    @error_row = "🌹"
     @raw_connection.copy_data(sql, @encoder) do
       rows.each do |row|
-        mapped = yield(row)
-        next unless mapped
-        processed = send(process_method_name, mapped)
-        imported_ids << mapped[:imported_id] unless mapped[:imported_id].nil?
-        imported_ids |= mapped[:imported_ids] unless mapped[:imported_ids].nil?
-        @raw_connection.put_copy_data columns.map { |c| processed[c] }
-        print "\r%7d - %6d/sec".freeze % [imported_ids.size, imported_ids.size.to_f / (Time.now - start)] if imported_ids.size % 5000 == 0
+        # @error_row = row
+        begin
+          # puts row
+          @error_row = row
+          mapped = yield(row)
+          next unless mapped
+          processed = send(process_method_name, mapped)
+          imported_ids << mapped[:imported_id] unless mapped[:imported_id].nil?
+          imported_ids |= mapped[:imported_ids] unless mapped[:imported_ids].nil?
+          @raw_connection.put_copy_data columns.map { |c| processed[c] }
+          print "\r%7d - %6d/sec".freeze % [imported_ids.size, imported_ids.size.to_f / (Time.now - start)] if imported_ids.size % 5000 == 0
+        rescue
+          puts "\n"
+          puts "🔥 row each rescue 🔥"
+          puts row
+        end
       end
     end
+
+    puts "️️️️️☄️ 2222222 ☄️"
 
     if imported_ids.size > 0
       print "\r%7d - %6d/sec".freeze % [imported_ids.size, imported_ids.size.to_f / (Time.now - start)]
       puts
     end
+
+    puts "️️️️️☄️ 33333333 ☄️"
 
     id_mapping_method_name = "#{name}_id_from_imported_id".freeze
     return unless respond_to?(id_mapping_method_name)
@@ -603,9 +618,26 @@ class BulkImport::Base
         value: imported_id,
       }
     end
+
+    puts "️️️️️☄️ 4444444 ☄️"
   rescue => e
+    puts "\n"
     puts e.message
     puts e.backtrace.join("\n")
+    puts e.inspect
+    # rows, name, columns
+    puts "🔥🔥🔥🔥🔥🔥🔥🔥"
+
+    # rows.each do |row|
+    #   print row
+    # end
+    puts @error_row
+
+    puts "🔥🔥🔥🔥🔥🔥🔥🔥"
+
+    puts rows.inspect
+    puts name.inspect
+    puts columns.inspect
   end
 
   def create_custom_fields(table, name, rows)
@@ -682,6 +714,7 @@ class BulkImport::Base
       end
     end
 
+    cooked = normalize_text(cooked)
     cooked.scrub.strip
   end
 
@@ -695,8 +728,12 @@ class BulkImport::Base
   end
 
   def normalize_charset(text)
-    return text if @encoding == Encoding::UTF_8
+    # return text if @encoding == Encoding::UTF_8
     return text && text.encode(@encoding).force_encoding(Encoding::UTF_8)
   end
 
 end
+
+# 1658294
+# @"MovieFan.Plex" this is still unresolved on my system, any movement on this topic? Was that added log info helpful?
+# Was that added log info helpful?
