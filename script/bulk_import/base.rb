@@ -57,7 +57,7 @@ class BulkImport::Base
     charset = ENV["DB_CHARSET"] || "utf8"
     db = ActiveRecord::Base.connection_config
     @encoder = PG::TextEncoder::CopyRow.new
-    @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port])
+    @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port], password: "discourse")
     @uploader = ImportScripts::Uploader.new
     @html_entities = HTMLEntities.new
     @encoding = CHARSET_MAP[charset]
@@ -414,18 +414,18 @@ class BulkImport::Base
   def process_post(post)
     @posts[post[:imported_id].to_s] = post[:id] = @last_post_id += 1
     post[:user_id] ||= Discourse::SYSTEM_USER_ID
-    post[:last_editor_id] = post[:user_id]
+    post[:last_editor_id] = post[:user_id].to_i
     @highest_post_number_by_topic_id[post[:topic_id]] ||= 0
     post[:post_number] = @highest_post_number_by_topic_id[post[:topic_id]] += 1
-    post[:sort_order] = post[:post_number]
-    @post_number_by_post_id[post[:id]] = post[:post_number]
-    @topic_id_by_post_id[post[:id]] = post[:topic_id]
+    post[:sort_order] = post[:post_number].to_i
+    @post_number_by_post_id[post[:id]] = post[:post_number].to_i
+    @topic_id_by_post_id[post[:id]] = post[:topic_id].to_i
     post[:raw] = (post[:raw] || "").scrub.strip.presence || "<Empty imported post>"
     post[:raw] = process_raw post[:raw]
     post[:like_count] ||= 0
     post[:cooked] = pre_cook post[:raw]
     post[:hidden] ||= false
-    post[:word_count] = post[:raw].scan(/[[:word:]]+/).size
+    post[:word_count] = post[:raw].scan(/[[:word:]]+/).size.to_i
     post[:created_at] ||= NOW
     post[:last_version_at] = post[:created_at]
     post[:updated_at] ||= post[:created_at]
@@ -580,8 +580,11 @@ class BulkImport::Base
 
     puts sql
     @error_row = "🌹"
+    @error_processed = "🌹"
+    @rows_saved = ["🌹"]
     @raw_connection.copy_data(sql, @encoder) do
       rows.each do |row|
+        @rows_saved.push(row)
         # @error_row = row
         begin
           # puts row
@@ -589,6 +592,7 @@ class BulkImport::Base
           mapped = yield(row)
           next unless mapped
           processed = send(process_method_name, mapped)
+          @error_processed = processed
           imported_ids << mapped[:imported_id] unless mapped[:imported_id].nil?
           imported_ids |= mapped[:imported_ids] unless mapped[:imported_ids].nil?
           @raw_connection.put_copy_data columns.map { |c| processed[c] }
@@ -601,14 +605,14 @@ class BulkImport::Base
       end
     end
 
-    puts "️️️️️☄️ 2222222 ☄️"
+    # puts "️️️️️☄️ 2222222 ☄️"
 
     if imported_ids.size > 0
       print "\r%7d - %6d/sec".freeze % [imported_ids.size, imported_ids.size.to_f / (Time.now - start)]
       puts
     end
 
-    puts "️️️️️☄️ 33333333 ☄️"
+    # puts "️️️️️☄️ 33333333 ☄️"
 
     id_mapping_method_name = "#{name}_id_from_imported_id".freeze
     return unless respond_to?(id_mapping_method_name)
@@ -619,25 +623,36 @@ class BulkImport::Base
       }
     end
 
-    puts "️️️️️☄️ 4444444 ☄️"
+    # puts "️️️️️☄️ 4444444 ☄️"
   rescue => e
     puts "\n"
     puts e.message
     puts e.backtrace.join("\n")
     puts e.inspect
     # rows, name, columns
-    puts "🔥🔥🔥🔥🔥🔥🔥🔥"
+    # if name == "post"
+      puts "🔥🔥🔥🔥🔥🔥🔥🔥"
 
-    # rows.each do |row|
-    #   print row
+      # rows.each do |row|
+      #   print row
+      # end
+      puts @error_row
+      puts "\n"
+      puts @error_processed.inspect
+
+      puts "🔥🔥🔥🔥🔥🔥🔥🔥"
+      puts "\n"
+
+      # @rows_saved.each do |row|
+      #   puts row.inspect
+      # end
+
+      # puts "\n"
+
+      puts rows.inspect
+      puts name.inspect
+      puts columns.inspect
     # end
-    puts @error_row
-
-    puts "🔥🔥🔥🔥🔥🔥🔥🔥"
-
-    puts rows.inspect
-    puts name.inspect
-    puts columns.inspect
   end
 
   def create_custom_fields(table, name, rows)
@@ -723,12 +738,16 @@ class BulkImport::Base
   end
 
   def normalize_text(text)
-    return nil unless text.present?
+    # return nil unless text.present?
+    # text.encode('UTF-8', :invalid => :replace, :undef => :replace)
     @html_entities.decode(normalize_charset(text.presence || "").scrub)
   end
 
   def normalize_charset(text)
     # return text if @encoding == Encoding::UTF_8
+    # text = text.delete("\000")
+    text = text.delete("\u0000")
+    # text = text.encode('UTF-8', :invalid => :replace, :undef => :replace)
     return text && text.encode(@encoding).force_encoding(Encoding::UTF_8)
   end
 
