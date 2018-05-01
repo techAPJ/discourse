@@ -18,6 +18,7 @@ module Jobs
       backup_file_path = URI(backup_file_path)
       backup_file_path.query = URI.encode_www_form(token: EmailBackupToken.set(user.id))
 
+      Rails.logger.warn "backup_file_path -- #{backup_file_path.to_s}"
       message = DownloadBackupMailer.send_email(user.email, backup_file_path.to_s)
       Email::Sender.new(message, :download_backup_message).send
     end

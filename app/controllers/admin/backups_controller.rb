@@ -60,21 +60,25 @@ class Admin::BackupsController < Admin::AdminController
 
   def show
 
-    if !EmailBackupToken.compare(current_user.id, params.fetch(:token))
-      @error = I18n.t('download_backup_mailer.no_token')
-    end
-    if !@error && backup = Backup[params.fetch(:id)]
-      EmailBackupToken.del(current_user.id)
-      StaffActionLogger.new(current_user).log_backup_download(backup)
-      headers['Content-Length'] = File.size(backup.path).to_s
-      send_file backup.path
-    else
-      if @error
-        render template: 'admin/backups/show.html.erb', layout: 'no_ember', status: 422
-      else
-        render body: nil, status: 404
-      end
-    end
+    backup = Backup[params.fetch(:id)]
+    # StaffActionLogger.new(current_user).log_backup_download(backup)
+    headers['Content-Length'] = File.size(backup.path).to_s
+    send_file backup.path
+    # if !EmailBackupToken.compare(current_user.id, params.fetch(:token))
+    #   @error = I18n.t('download_backup_mailer.no_token')
+    # end
+    # if !@error && backup = Backup[params.fetch(:id)]
+    #   EmailBackupToken.del(current_user.id)
+    #   StaffActionLogger.new(current_user).log_backup_download(backup)
+    #   headers['Content-Length'] = File.size(backup.path).to_s
+    #   send_file backup.path
+    # else
+    #   if @error
+    #     render template: 'admin/backups/show.html.erb', layout: 'no_ember', status: 422
+    #   else
+    #     render body: nil, status: 404
+    #   end
+    # end
   end
 
   def destroy
