@@ -19,7 +19,7 @@ class InvitesController < ApplicationController
 
     invite = Invite.find_by(invite_key: params[:id])
 
-    if invite.present?
+    if invite.present? && !invite.redeemed?
       store_preloaded("invite_info", MultiJson.dump(
         invited_by: UserNameSerializer.new(invite.invited_by, scope: guardian, root: false),
         email: invite.email,
@@ -27,6 +27,12 @@ class InvitesController < ApplicationController
       )
 
       render layout: 'application'
+    elsif invite.present? && invite.email.present? && invite.redeemed? && invite.redeemed_at >= SiteSetting.invite_passthrough_hours.hours.ago
+      # If `invite_passthrough_hours` is defined, allow them to re-use the invite link
+      # to login again.
+      user = invite.redeem
+      log_on_user(user) if user.present?
+      redirect_to path("/")
     else
       flash.now[:error] = I18n.t('invite.not_found')
       render layout: 'no_ember'
