@@ -188,3 +188,5 @@ if ENV["IMPORT"] == "1"
 end
 
 gem 'webpush', require: false
+
+gem 'sqlite3'
