@@ -61,8 +61,12 @@ const Topic = RestModel.extend({
 
   @computed("fancy_title")
   fancyTitle(title) {
+    let unescapedTitle = title || "";
+    if (this.siteSettings.max_emojis_in_title > 0) {
+      unescapedTitle = emojiUnescape(unescapedTitle);
+    }
     let fancyTitle = censor(
-      emojiUnescape(title || ""),
+      unescapedTitle,
       Discourse.Site.currentProp("censored_words")
     );
 

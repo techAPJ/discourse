@@ -124,7 +124,9 @@ createWidget("notification-item", {
 
     let { data } = attrs;
     let infoKey = notName === "custom" ? data.message : notName;
-    let text = emojiUnescape(this.text(notificationType, notName));
+    if (this.siteSettings.max_emojis_in_title > 0) {
+      let text = emojiUnescape(this.text(notificationType, notName));
+    }
     let icon = iconNode(`notification.${infoKey}`);
 
     // We can use a `<p>` tag here once other languages have fixed their HTML

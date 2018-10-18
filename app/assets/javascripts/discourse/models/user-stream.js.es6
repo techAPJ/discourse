@@ -95,9 +95,11 @@ export default RestModel.extend({
         if (result && result.user_actions) {
           const copy = Em.A();
           result.user_actions.forEach(function(action) {
-            action.title = emojiUnescape(
-              Handlebars.Utils.escapeExpression(action.title)
-            );
+            if (this.siteSettings.max_emojis_in_title > 0) {
+              action.title = emojiUnescape(
+                Handlebars.Utils.escapeExpression(action.title)
+              );
+            }
             copy.pushObject(UserAction.create(action));
           });
 
