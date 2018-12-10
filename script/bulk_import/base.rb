@@ -15,6 +15,7 @@ require "pg"
 require "set"
 require "redcarpet"
 require "htmlentities"
+require 'ruby-bbcode-to-md'
 
 puts "Loading application..."
 require_relative "../../config/environment"
@@ -74,12 +75,13 @@ class BulkImport::Base
     charset = ENV["DB_CHARSET"] || "utf8"
     db = ActiveRecord::Base.connection_config
     @encoder = PG::TextEncoder::CopyRow.new
-    @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port])
+    # @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port])
     # @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port], password: "discourse")
+    @raw_connection = PG.connect(dbname: db[:database], port: db[:port])
     @uploader = ImportScripts::Uploader.new
     @html_entities = HTMLEntities.new
     @encoding = CHARSET_MAP[charset]
-    @bbcode_to_md = true if use_bbcode_to_md?
+    @bbcode_to_md = true
 
     @markdown = Redcarpet::Markdown.new(
       Redcarpet::Render::HTML.new(hard_wrap: true),
@@ -573,16 +575,16 @@ class BulkImport::Base
 
     # [URL]...[/URL]
     # [MP3]...[/MP3]
-    # [EMAIL]...[/EMAIL]
     # [LEFT]...[/LEFT]
     raw.gsub!(/\[\/?URL\]/i, "")
     raw.gsub!(/\[\/?MP3\]/i, "")
-    raw.gsub!(/\[\/?EMAIL\]/i, "")
     raw.gsub!(/\[\/?LEFT\]/i, "")
 
     # [FONT=blah] and [COLOR=blah]
     raw.gsub!(/\[FONT=.*?\](.*?)\[\/FONT\]/im, "\\1")
     raw.gsub!(/\[COLOR=.*?\](.*?)\[\/COLOR\]/im, "\\1")
+    raw.gsub!(/\[EMAIL=.*?\](.*?)\[\/EMAIL\]/im, "\\1")
+    raw.gsub!(/\[\/?EMAIL\]/i, "")
 
     raw.gsub!(/\[SIZE=.*?\](.*?)\[\/SIZE\]/im, "\\1")
     raw.gsub!(/\[H=.*?\](.*?)\[\/H\]/im, "\\1")
@@ -647,6 +649,10 @@ class BulkImport::Base
     raw.gsub!(/\[\*\](.*?)\[\/\*:m\]/, '[li]\1[/li]')
     raw.gsub!(/\[\*\](.*?)\n/, '[li]\1[/li]')
     raw.gsub!(/\[\*=1\]/, '')
+
+    # [RIMG][/RIMG]
+    raw = raw.gsub(/\[RIMG\](https?:.+?)\[\/RIMG\]/i) { "<img src=\"#{$1}\">" }
+    raw.gsub!(/\[\/?RIMG\]/i, "")
 
     raw
   end
@@ -785,6 +791,17 @@ class BulkImport::Base
   def normalize_charset(text)
     return text if @encoding == Encoding::UTF_8
     return text && text.encode(@encoding).force_encoding(Encoding::UTF_8)
+  end
+
+  def print_status(current, max, start_time = nil)
+    if start_time.present?
+      elapsed_seconds = Time.now - start_time
+      elements_per_minute = '[%.0f items/min]  ' % [current / elapsed_seconds.to_f * 60]
+    else
+      elements_per_minute = ''
+    end
+
+    print "\r%9d / %d (%5.1f%%)  %s" % [current, max, current / max.to_f * 100, elements_per_minute]
   end
 
 end
