@@ -12,10 +12,10 @@ class BulkImport::VBulletin < BulkImport::Base
   def initialize
     super
 
-    host     = ENV["DB_HOST"] || "127.0.0.1"
+    host     = ENV["DB_HOST"] || "localhost"
     username = ENV["DB_USERNAME"] || "root"
-    password = ENV["DB_PASSWORD"] || ""
-    database = ENV["DB_NAME"] || "vbulletin"
+    password = ENV["DB_PASSWORD"] || "jalan"
+    database = ENV["DB_NAME"] || "internachi"
     charset  = ENV["DB_CHARSET"] || "utf8"
 
     @html_entities = HTMLEntities.new
@@ -636,3 +636,5 @@ class BulkImport::VBulletin < BulkImport::Base
 end
 
 BulkImport::VBulletin.new.run
+
+# bundle exec ruby script/bulk_import/vbulletin.rb
