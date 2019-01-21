@@ -72,9 +72,9 @@ class BulkImport::VBulletin < BulkImport::Base
     import_topic_allowed_users
     import_private_posts
 
-    create_permalink_file
+    # create_permalink_file
 
-    import_attachments
+    # import_attachments
   end
 
   def import_groups
@@ -101,10 +101,9 @@ class BulkImport::VBulletin < BulkImport::Base
     puts "Importing users..."
 
     users = mysql_stream <<-SQL
-        SELECT u.userid, u.username, email, joindate, birthday, ipaddress, u.usergroupid, bandate, liftdate, mv.display_name, uf.field2
+        SELECT u.userid, u.username, email, joindate, birthday, ipaddress, u.usergroupid, bandate, liftdate, mv.display_name
           FROM #{TABLE_PREFIX}user u
      LEFT JOIN #{TABLE_PREFIX}userban ub ON ub.userid = u.userid
-     LEFT JOIN #{TABLE_PREFIX}userfield uf ON uf.userid = u.userid
      LEFT JOIN members_vbulletin2 mv ON mv.id = u.userid
          WHERE u.userid > #{@last_imported_user_id}
       ORDER BY u.userid
@@ -129,7 +128,6 @@ class BulkImport::VBulletin < BulkImport::Base
       else
         u[:name] = normalize_text(row[1])
       end
-      u[:location] = normalize_text(row[10]) if row[10].present?
 
       u
     end
@@ -246,10 +244,11 @@ class BulkImport::VBulletin < BulkImport::Base
     puts "Importing user profiles..."
 
     user_profiles = mysql_stream <<-SQL
-        SELECT userid, homepage, profilevisits
-          FROM #{TABLE_PREFIX}user
-         WHERE userid > #{@last_imported_user_id}
-      ORDER BY userid
+        SELECT u.userid, u.homepage, u.profilevisits, uf.field2
+          FROM #{TABLE_PREFIX}user u
+          LEFT JOIN #{TABLE_PREFIX}userfield uf ON uf.userid = u.userid
+         WHERE u.userid > #{@last_imported_user_id}
+      ORDER BY u.userid
     SQL
 
     create_user_profiles(user_profiles) do |row|
@@ -257,6 +256,7 @@ class BulkImport::VBulletin < BulkImport::Base
         user_id: user_id_from_imported_id(row[0]),
         website: (URI.parse(row[1]).to_s rescue nil),
         views: row[2],
+        location: (normalize_text(row[3]) rescue nil)
       }
     end
   end
