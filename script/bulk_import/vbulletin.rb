@@ -8,6 +8,7 @@ class BulkImport::VBulletin < BulkImport::Base
   TABLE_PREFIX = "vb_"
   SUSPENDED_TILL ||= Date.new(3000, 1, 1)
   ATTACHMENT_DIR ||= ENV['ATTACHMENT_DIR'] || '/shared/import/data/attachments'
+  AVATAR_DIR ||= ENV['AVATAR_DIR'] || '/home/techapj/projects/internachi/customavatars'
 
   def initialize
     super
@@ -71,6 +72,9 @@ class BulkImport::VBulletin < BulkImport::Base
     import_private_topics
     import_topic_allowed_users
     import_private_posts
+
+    import_avatars
+    import_signatures
 
     # create_permalink_file
 
@@ -613,6 +617,86 @@ class BulkImport::VBulletin < BulkImport::Base
     RateLimiter.enable
   end
 
+
+  def import_avatars
+    if AVATAR_DIR && File.exists?(AVATAR_DIR)
+      puts "", "importing user avatars"
+
+      RateLimiter.disable
+      start = Time.now
+      count = 0
+
+      Dir.foreach(AVATAR_DIR) do |item|
+        print "\r%7d - %6d/sec".freeze % [count, count.to_f / (Time.now - start)]
+
+        next if item == ('.') || item == ('..') || item == ('.DS_Store')
+        next unless item =~ /avatar(\d+)_(\d).gif/
+        scan = item.scan(/avatar(\d+)_(\d).gif/)
+        next unless scan[0][0].present?
+        # user_id_from_imported_id(row[1])
+        u = UserCustomField.find_by(name: "import_id", value: scan[0][0]).try(:user)
+        next unless u.present?
+        # raise "User not found for id #{user_id}" if user.blank?
+
+        photo_real_filename = File.join(AVATAR_DIR, item)
+        puts "#{photo_real_filename} not found" unless File.exists?(photo_real_filename)
+
+        upload = create_upload(u.id, photo_real_filename, File.basename(photo_real_filename))
+        count += 1
+        if upload.persisted?
+          u.import_mode = false
+          u.create_user_avatar
+          u.import_mode = true
+          u.user_avatar.update(custom_upload_id: upload.id)
+          u.update(uploaded_avatar_id: upload.id)
+        else
+          puts "Error: Upload did not persist for #{u.username} #{photo_real_filename}!"
+        end
+      end
+
+      puts "", "imported #{count} avatars..."
+      RateLimiter.enable
+    end
+  end
+
+  def import_signatures
+    puts "Importing user signatures..."
+
+    total_count = mysql_query(<<-SQL
+      SELECT COUNT(userid) count
+        FROM #{TABLE_PREFIX}sigparsed
+    SQL
+    ).first[0].to_i
+    current_count = 0
+
+    user_signatures = mysql_stream <<-SQL
+        SELECT userid, signatureparsed
+          FROM #{TABLE_PREFIX}sigparsed
+      ORDER BY userid
+    SQL
+
+    user_signatures.each do |sig|
+      current_count += 1
+      print_status current_count, total_count
+      user_id = sig[0]
+      user_sig = sig[1]
+      next unless user_id.present? && user_sig.present?
+
+      u = UserCustomField.find_by(name: "import_id", value: user_id).try(:user)
+      next unless u.present?
+
+      # can not hold dupes
+      UserCustomField.where(user_id: u.id, name: ["see_signatures", "signature_raw", "signature_cooked"]).destroy_all
+
+      # signatures advanced mode enable setting?
+      # sigpic tags strip
+      user_sig.gsub!(/\[\/?sigpic\]/i, "")
+
+      UserCustomField.create!(user_id: u.id, name: "see_signatures", value: true)
+      UserCustomField.create!(user_id: u.id, name: "signature_raw", value: user_sig)
+      UserCustomField.create!(user_id: u.id, name: "signature_cooked", value: PrettyText.cook(user_sig, omit_nofollow: false))
+    end
+  end
 
   def extract_pm_title(title)
     normalize_text(title).scrub.gsub(/^Re\s*:\s*/i, "")
