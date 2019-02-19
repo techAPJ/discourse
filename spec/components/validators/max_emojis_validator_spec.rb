@@ -21,6 +21,14 @@ describe MaxEmojisValidator do
       record.title = ':joy: :blush: :smile: is not only about emojis: Happyness::start()'
       validate
       expect(record.valid?).to be true
+
+      upload = Fabricate(:upload)
+      custom_emoji = CustomEmoji.create!(name: 'test', upload: upload)
+      Emoji.clear_cache
+      record.title = 'Lots of emojis here 🎃 :joy: :test: & :test: ...)'
+      validate
+
+      expect(record.errors[:title][0]).to eq(I18n.t("errors.messages.max_emojis", max_emojis_count: 3))
     end
   end
 
