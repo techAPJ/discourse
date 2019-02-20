@@ -3,7 +3,10 @@ function escapeRegexp(text) {
 }
 
 function createCensorRegexp(patterns) {
-  return new RegExp(`((?<!\\w)(?:${patterns.join("|")}))(?!\\w)`, "ig");
+  console.log(patterns.join("|"));
+  // return new RegExp(`((?<!\\w)(?:${patterns.join("|")}))(?!\\w)`, "ig");
+  return new RegExp(`(?<!\\w)(${patterns.join("|")})(?!\\w)`, "ig");
+  // return new RegExp(`((?<!\\w)(${patterns.join("|")}))(?!\\w)`, "ig");
 }
 
 export function censorFn(
@@ -11,6 +14,7 @@ export function censorFn(
   replacementLetter,
   watchedWordsRegularExpressions
 ) {
+  console.log("censorRegexp");
   let patterns = [];
 
   replacementLetter = replacementLetter || "&#9632;";
@@ -21,21 +25,30 @@ export function censorFn(
       patterns = patterns.map(t => `(${escapeRegexp(t)})`);
     }
   }
+  console.log(patterns);
 
   if (patterns.length) {
     let censorRegexp;
+    console.log("patterns");
 
     try {
       if (watchedWordsRegularExpressions) {
+      console.log("11");
         censorRegexp = new RegExp(
           "((?:" + patterns.join("|") + "))(?![^\\(]*\\))",
           "ig"
         );
       } else {
-        censorRegexp = createCensorRegexp(patterns);
+        console.log("22");
+        censorRegexp = new RegExp(
+          `((?<!\\w)(?:${patterns.join("|")}))(?!\\w)`,
+          "ig"
+        );
+        console.log(censorRegexp);
       }
 
       if (censorRegexp) {
+        console.log("44");
         return function(text) {
           let original = text;
 
