@@ -1,4 +1,4 @@
-if ARGV.include?('bbcode-to-md')
+if true
   # Replace (most) bbcode with markdown before creating posts.
   # This will dramatically clean up the final posts in Discourse.
   #
@@ -74,7 +74,8 @@ class BulkImport::Base
     charset = ENV["DB_CHARSET"] || "utf8"
     db = ActiveRecord::Base.connection_config
     @encoder = PG::TextEncoder::CopyRow.new
-    @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port])
+    @raw_connection = PG.connect(dbname: db[:database], port: db[:port])
+    # @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port])
     # @raw_connection = PG.connect(dbname: db[:database], host: db[:host_names]&.first, port: db[:port], password: "discourse")
     @uploader = ImportScripts::Uploader.new
     @html_entities = HTMLEntities.new
@@ -187,7 +188,8 @@ class BulkImport::Base
   end
 
   def use_bbcode_to_md?
-    ARGV.include?("bbcode-to-md")
+    # ARGV.include?("bbcode-to-md")
+    true
   end
 
   def execute
@@ -306,9 +308,9 @@ class BulkImport::Base
   def create_categories(rows, &block)
     create_records(rows, "category", CATEGORY_COLUMNS, &block)
 
-    Category.where(topic_id: nil).each do |c|
-      c.create_category_definition
-    end
+    # Category.where(topic_id: nil).each do |c|
+    #   c.create_category_definition
+    # end
   end
 
   def create_user_emails(rows, &block)
@@ -574,12 +576,14 @@ class BulkImport::Base
     # [LEFT]...[/LEFT]
     raw.gsub!(/\[\/?URL\]/i, "")
     raw.gsub!(/\[\/?MP3\]/i, "")
-    raw.gsub!(/\[\/?EMAIL\]/i, "")
+    # raw.gsub!(/\[\/?EMAIL\]/i, "")
     raw.gsub!(/\[\/?LEFT\]/i, "")
 
     # [FONT=blah] and [COLOR=blah]
     raw.gsub!(/\[FONT=.*?\](.*?)\[\/FONT\]/im, "\\1")
     raw.gsub!(/\[COLOR=.*?\](.*?)\[\/COLOR\]/im, "\\1")
+    raw.gsub!(/\[EMAIL=.*?\](.*?)\[\/EMAIL\]/im, "\\1")
+    raw.gsub!(/\[\/?EMAIL\]/i, "")
 
     raw.gsub!(/\[SIZE=.*?\](.*?)\[\/SIZE\]/im, "\\1")
     raw.gsub!(/\[H=.*?\](.*?)\[\/H\]/im, "\\1")
@@ -644,6 +648,10 @@ class BulkImport::Base
     raw.gsub!(/\[\*\](.*?)\[\/\*:m\]/, '[li]\1[/li]')
     raw.gsub!(/\[\*\](.*?)\n/, '[li]\1[/li]')
     raw.gsub!(/\[\*=1\]/, '')
+
+    # [RIMG][/RIMG]
+    raw = raw.gsub(/\[RIMG\](https?:.+?)\[\/RIMG\]/i) { "<img src=\"#{$1}\">" }
+    raw.gsub!(/\[\/?RIMG\]/i, "")
 
     raw
   end
@@ -782,6 +790,17 @@ class BulkImport::Base
   def normalize_charset(text)
     return text if @encoding == Encoding::UTF_8
     return text && text.encode(@encoding).force_encoding(Encoding::UTF_8)
+  end
+
+  def print_status(current, max, start_time = nil)
+    if start_time.present?
+      elapsed_seconds = Time.now - start_time
+      elements_per_minute = '[%.0f items/min]  ' % [current / elapsed_seconds.to_f * 60]
+    else
+      elements_per_minute = ''
+    end
+
+    print "\r%9d / %d (%5.1f%%)  %s" % [current, max, current / max.to_f * 100, elements_per_minute]
   end
 
 end
