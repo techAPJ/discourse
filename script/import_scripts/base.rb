@@ -610,6 +610,50 @@ class ImportScripts::Base
     [created, skipped]
   end
 
+  def create_likes(results, opts = {})
+    created = 0
+    skipped = 0
+    total = opts[:total] || results.count
+
+    user = User.new
+    post = Post.new
+
+    results.each do |result|
+      params = yield(result)
+
+      # only the IDs are needed, so this should be enough
+      if params.nil?
+        skipped += 1
+      else
+        user.id = user_id_from_imported_user_id(params[:user_id])
+        post.id = post_id_from_imported_post_id(params[:post_id])
+
+        if user.id.nil? || post.id.nil?
+          skipped += 1
+          puts "Skipping like for user id #{params[:user_id]} and post id #{params[:post_id]}"
+        else
+          # begin
+          #   PostAction.act(user, post, PostActionType.types[:like])
+          #   created += 1
+          # rescue PostAction::AlreadyActed
+          #   skipped += 1
+          # end
+          # puts "???"
+          # exit
+          # result = PostActionCreator.create(user, post, :like)
+          result = PostActionCreator.like(user, post)
+          created += 1 if result.success?
+          skipped += 1 if result.failed?
+        end
+      end
+
+      print_status(created + skipped + (opts[:offset] || 0), total, get_start_time("likes"))
+    end
+
+    puts "created #{created} records, skipped #{skipped} records"
+    [created, skipped]
+  end
+
   def close_inactive_topics(opts = {})
     num_days = opts[:days] || 30
     puts '', "Closing topics that have been inactive for more than #{num_days} days."

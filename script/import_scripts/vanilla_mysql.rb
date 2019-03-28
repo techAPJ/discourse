@@ -6,9 +6,9 @@ require 'htmlentities'
 
 class ImportScripts::VanillaSQL < ImportScripts::Base
 
-  VANILLA_DB = "vanilla_mysql"
+  VANILLA_DB = "ecommercefuel"
   TABLE_PREFIX = "GDN_"
-  ATTACHMENTS_BASE_DIR = nil # "/absolute/path/to/attachments" set the absolute path if you have attachments
+  ATTACHMENTS_BASE_DIR = "/home/techapj/projects/ecommercefuel/uploads" # "/absolute/path/to/attachments" set the absolute path if you have attachments
   BATCH_SIZE = 1000
   CONVERT_HTML = true
 
@@ -18,11 +18,12 @@ class ImportScripts::VanillaSQL < ImportScripts::Base
     @client = Mysql2::Client.new(
       host: "localhost",
       username: "root",
-      password: "pa$$word",
+      password: "jalan",
       database: VANILLA_DB
     )
 
     @import_tags = false
+    @first_message_ids = []
     begin
       r = @client.query("select count(*) count from #{TABLE_PREFIX}Tag where countdiscussions > 0")
       @import_tags = true if r.first["count"].to_i > 0
@@ -37,15 +38,21 @@ class ImportScripts::VanillaSQL < ImportScripts::Base
       SiteSetting.max_tags_per_topic = 10
     end
 
-    import_users
-    import_avatars
-    import_categories
-    import_topics
-    import_posts
+    # import_users
+    # import_categories
+    # import_topics
+    # import_posts
 
-    update_tl0
+    # update_tl0
 
-    create_permalinks
+    # import_private_topics
+    # import_private_posts
+
+    # import_likes
+    # create_permalinks
+
+    # import_avatars
+    import_attachments
   end
 
   def import_users
@@ -119,6 +126,7 @@ class ImportScripts::VanillaSQL < ImportScripts::Base
         # 1. cf://uploads/userpics/820/Y0AFUQYYM6QN.jpg
         # 2. ~cf/userpics2/cf566487133f1f538e02da96f9a16b18.jpg
         # 3. ~cf/userpics/txkt8kw1wozn.jpg
+        # 4: s3://uploads/userpics/441/FFN9B4CI6MDB.jpg
 
         photo_real_filename = nil
         parts = photo.squeeze("/").split("/")
@@ -126,6 +134,8 @@ class ImportScripts::VanillaSQL < ImportScripts::Base
           photo_path = "#{ATTACHMENTS_BASE_DIR}/#{parts[2..-2].join('/')}".squeeze("/")
         elsif parts[0] == "~cf"
           photo_path = "#{ATTACHMENTS_BASE_DIR}/#{parts[1..-2].join('/')}".squeeze("/")
+        elsif parts[0] == "s3:"
+          photo_path = "#{ATTACHMENTS_BASE_DIR}/#{parts[2..-2].join('/')}".squeeze("/")
         else
           puts "UNKNOWN FORMAT: #{photo}"
           next
@@ -360,6 +370,236 @@ class ImportScripts::VanillaSQL < ImportScripts::Base
   def mysql_query(sql)
     @client.query(sql)
     # @client.query(sql, cache_rows: false) #segfault: cache_rows: false causes segmentation fault
+  end
+
+
+  def import_private_topics
+    puts "", "Importing private topics..."
+
+    total_count = mysql_query("SELECT COUNT(ConversationID) count FROM #{TABLE_PREFIX}Conversation").first["count"]
+    last_private_message_id = -1
+
+    batches(BATCH_SIZE) do |offset|
+      private_messages = mysql_query(<<-SQL
+          SELECT c.ConversationID, c.Subject, m.MessageID, m.Body, c.DateInserted, c.InsertUserID, c.FirstMessageID
+          FROM #{TABLE_PREFIX}Conversation c, #{TABLE_PREFIX}ConversationMessage m
+          WHERE c.FirstMessageID = m.MessageID
+            AND c.ConversationID > #{last_private_message_id}
+          ORDER BY c.ConversationID ASC
+           LIMIT #{BATCH_SIZE}
+      SQL
+      ).to_a
+
+      # puts private_messages.inspect
+      break if private_messages.empty?
+      last_private_message_id = private_messages[-1]["ConversationID"]
+
+      create_posts(private_messages, total: total_count, offset: offset) do |row|
+        user_id = user_id_from_imported_user_id(row["InsertUserID"]) || Discourse::SYSTEM_USER_ID
+        @first_message_ids << row["FirstMessageID"]
+
+        # fetch topic allowed users
+        topic_allowed_users = mysql_query("
+                SELECT ConversationID, UserID
+                  FROM #{TABLE_PREFIX}UserConversation
+                 WHERE Deleted = 0
+                   AND ConversationID = #{row["ConversationID"]}").to_a
+
+        to_user_array = [user_id]
+        topic_allowed_users.each do |user|
+          to_user_array << user["UserID"]
+        end
+        recipients = to_user_array.map { |id| user_id_from_imported_user_id(id) }.compact.uniq
+        target_users = (recipients).sort.uniq
+        target_usernames = User.where(id: target_users).pluck(:username)
+        # puts User.where(id: target_users).pluck(:username).inspect
+        # exit
+
+        d = {
+          archetype: Archetype.private_message,
+          id: "conversation##{row['ConversationID']}",
+          title: row["Subject"] ? clean_up(row["Subject"]) : "Conversation #{row["ConversationID"]}",
+          user_id: user_id,
+          target_usernames: target_usernames.join(','),
+          raw: clean_up(row['Body']),
+          created_at: Time.zone.at(row['DateInserted'])
+        }
+
+        d
+      end
+    end
+  end
+
+  def import_private_posts
+    puts "", "importing private replies..."
+
+    total_count = mysql_query("SELECT COUNT(MessageID) count FROM #{TABLE_PREFIX}ConversationMessage").first["count"]
+    last_private_message_id = -1
+
+    batches(BATCH_SIZE) do |offset|
+      private_messages = mysql_query(<<-SQL
+          SELECT ConversationID, MessageID, Body, InsertUserID, DateInserted
+          FROM #{TABLE_PREFIX}ConversationMessage
+          WHERE MessageID > #{last_private_message_id}
+          ORDER BY ConversationID ASC, MessageID ASC
+            LIMIT #{BATCH_SIZE}
+      SQL
+      ).to_a
+
+      break if private_messages.empty?
+      last_private_message_id = private_messages[-1]["MessageID"]
+
+      create_posts(private_messages, total: total_count, offset: offset) do |row|
+        next if @first_message_ids.include?(row['MessageID'])
+        next unless topic_id = topic_lookup_from_imported_post_id("conversation##{row['ConversationID']}")
+        user_id = user_id_from_imported_user_id(row["InsertUserID"]) || Discourse::SYSTEM_USER_ID
+
+        d = {
+          id: "message##{row['MessageID']}",
+          topic_id: topic_id[:topic_id],
+          user_id: user_id,
+          created_at: Time.zone.at(row['DateInserted']),
+          raw: clean_up(row['Body'])
+        }
+
+        # puts d.inspect
+        # exit
+        d
+      end
+    end
+  end
+
+  def import_likes
+    puts "", "importing likes..."
+
+    # total_count = mysql_query("SELECT COUNT(RecordID) count FROM #{TABLE_PREFIX}UserTag WHERE RecordType = 'Comment' OR RecordType = 'Discussion'").first["count"]
+    # puts total_count
+
+    likes = mysql_query(<<-SQL
+        SELECT RecordType, RecordID, TagID, UserID, DateInserted, Total
+        FROM #{TABLE_PREFIX}UserTag
+        WHERE (RecordType = "Comment" OR RecordType = "Discussion")
+        AND (TagID = 4  OR TagID = 10)
+        ORDER BY RecordID ASC
+    SQL
+    ).to_a
+    # puts likes.first.inspect
+    # exit
+
+    create_likes(likes) do |row|
+      # next if @first_message_ids.include?(row['MessageID'])
+
+      if (row['RecordType'] == "Discussion")
+        source_id = "discussion##{row['RecordID'].to_s}"
+      else
+        source_id = "comment##{row['RecordID'].to_s}"
+      end
+
+      d = {
+        user_id: row['UserID'],
+        post_id: source_id
+      }
+
+      # puts d.inspect
+      # exit
+      d
+    end
+  end
+
+  def import_attachments
+    if ATTACHMENTS_BASE_DIR && File.exists?(ATTACHMENTS_BASE_DIR)
+      puts "", "importing attachments"
+
+      start = Time.now
+      count = 0
+      success_count = 0
+      fail_count = 0
+      total_count = Post.where("raw LIKE '%/us.v-cdn.net/%' OR raw LIKE '%[attachment%'").count
+      # puts total_count
+      # exit
+
+      # https://us.v-cdn.net/5020834/uploads/editor/4j/joqm27li8tkx.png
+      cdn_regex = /https:\/\/us.v-cdn.net\/5020834\/uploads\/(\S+\/(\w|-)+.\w+)/i
+      # [attachment=10109:Screen Shot 2012-04-01 at 3.47.35 AM.png]
+      attachment_regex = /\[attachment=(\d+):(.*?)\]/i
+
+      Post.where("raw LIKE '%/us.v-cdn.net/%' OR raw LIKE '%[attachment%'").find_each do |post|
+        # puts post.raw
+        # exit
+        # next
+        count += 1
+        print_status count, total_count
+
+        # print "\r%7d - %6d/sec".freeze % [count, count.to_f / (Time.now - start)]
+        new_raw = post.raw.dup
+
+        new_raw.gsub!(attachment_regex) do |s|
+          matches = attachment_regex.match(s)
+          attachment_id = matches[1]
+          file_name = matches[2]
+          next unless attachment_id
+
+          r = mysql_query("SELECT Path, Name FROM #{TABLE_PREFIX}Media WHERE MediaID = #{attachment_id};").first
+          next if r.nil?
+          path = r["Path"]
+          name = r["Name"]
+          next unless path.present?
+
+          path.gsub!("s3://content/", "")
+          path.gsub!("s3://uploads/", "")
+          file_path = "#{ATTACHMENTS_BASE_DIR}/#{path}"
+
+          if File.exists?(file_path)
+            upload = create_upload(post.user.id, file_path, File.basename(file_path))
+            if upload && upload.errors.empty?
+              # upload.url
+              filename = name || file_name || File.basename(file_path)
+              html_for_upload(upload, normalize_text(filename))
+            else
+              puts "Error: Upload did not persist for #{post.id} #{attachment_id}!"
+              fail_count += 1
+            end
+          else
+            puts "Couldn't find file for #{attachment_id}. Skipping."
+            fail_count += 1
+            next
+          end
+        end
+
+        new_raw.gsub!(cdn_regex) do |s|
+          matches = cdn_regex.match(s)
+          attachment_id = matches[1]
+
+          file_path = "#{ATTACHMENTS_BASE_DIR}/#{attachment_id}"
+
+          if File.exists?(file_path)
+            upload = create_upload(post.user.id, file_path, File.basename(file_path))
+            if upload && upload.errors.empty?
+              upload.url
+            else
+              puts "Error: Upload did not persist for #{post.id} #{attachment_id}!"
+              fail_count += 1
+            end
+          else
+            puts "Couldn't find file for #{attachment_id}. Skipping."
+            fail_count += 1
+            next
+          end
+        end
+
+        if new_raw != post.raw
+          begin
+            PostRevisor.new(post).revise!(post.user, { raw: new_raw }, skip_revision: true, skip_validations: true, bypass_bump: true)
+            success_count += 1
+          rescue
+            puts "PostRevisor error for #{post.id}"
+            post.raw = new_raw
+            post.save(validate: false)
+          end
+        end
+      end
+    end
+    puts "", "imported #{success_count} attachments... failed: #{fail_count}."
   end
 
   def create_permalinks
