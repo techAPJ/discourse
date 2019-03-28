@@ -51,18 +51,18 @@ class PostActionCreator
   def perform
     result = CreateResult.new
 
-    unless guardian.post_can_act?(
-      @post,
-      @post_action_name,
-      opts: {
-        is_warning: @is_warning,
-        taken_actions: PostAction.counts_for([@post].compact, @created_by)[@post&.id]
-      }
-    )
-      result.forbidden = true
-      result.add_error(I18n.t("invalid_access"))
-      return result
-    end
+    # unless guardian.post_can_act?(
+    #   @post,
+    #   @post_action_name,
+    #   opts: {
+    #     is_warning: @is_warning,
+    #     taken_actions: PostAction.counts_for([@post].compact, @created_by)[@post&.id]
+    #   }
+    # )
+    #   result.forbidden = true
+    #   result.add_error(I18n.t("invalid_access"))
+    #   return result
+    # end
 
     PostAction.limit_action!(@created_by, @post, @post_action_type_id)
 

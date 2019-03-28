@@ -97,7 +97,7 @@ class PostAction < ActiveRecord::Base
   end
 
   def self.act(created_by, post, post_action_type_id, opts = {})
-    Discourse.deprecate("PostAction.act is deprecated. Use `PostActionCreator` instead.", output_in_test: true)
+    # Discourse.deprecate("PostAction.act is deprecated. Use `PostActionCreator` instead.", output_in_test: true)
 
     result = PostActionCreator.new(
       created_by,
