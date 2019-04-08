@@ -199,3 +199,73 @@ def find_user(username)
 
   user
 end
+
+desc "SSO"
+task "users:connect_sso" => :environment do
+  # file = File.open("../discourse-external-ids.csv", encoding: 'bom|utf-8')
+  # CSV.new(file).each do |csv_info|
+  CSV.foreach(File.dirname(__FILE__) + "/discourse-external-ids.csv") do |row|
+
+    user = User.find_by_username(row[0])
+
+    if user.present?
+      SingleSignOnRecord.create!(user_id: user.id, external_id: row[1].to_i, last_payload: 'initial seed')
+    end
+    puts user.inspect
+    exit
+  end
+end
+
+desc "custom signature"
+task "users:enable_signature" => :environment do
+  puts "---- enabling signatures ----"
+  User.find_each do |u|
+    unless u.custom_fields['see_signatures'] == true
+      begin
+        u.custom_fields['see_signatures'] = true
+        u.save!
+      rescue
+        # skip
+      end
+    end
+    putc "."
+  end
+  puts "Done!"
+end
+
+desc "fix links"
+task "users:fix_links" => :environment do
+  puts "---- fixing links ----"
+
+  total = Post.where("posts.cooked LIKE '%<a%'").count
+  fixed = 0
+  count = 0
+
+  Post.where("posts.cooked LIKE '%<a%'").each do |p|
+    raw = p.raw
+    scanned = raw.scan(/\[([^\]]+)\]\(([^)]+)\)/)
+    if scanned.present?
+      scanned.each do |link|
+        begin
+          url = link[1]
+          uri = URI.extract(url)
+          if uri.blank?
+            if url.match(/^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)?[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$/)
+              new_raw = p.raw.gsub("(#{url})", "(http://#{url})")
+              p.revise(Discourse.system_user, { raw: new_raw }, bypass_bump: true, skip_revision: true)
+              count += 1
+            end
+          end
+        rescue
+          # skip
+        end
+      end
+    end
+    print_status(fixed += 1, total)
+  end
+  puts "Done! Fixed #{count} links!"
+end
+
+def print_status(current, max)
+  print "\r%9d / %d (%5.1f%%)" % [current, max, ((current.to_f / max.to_f) * 100).round(1)]
+end
