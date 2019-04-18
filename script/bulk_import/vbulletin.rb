@@ -13,9 +13,11 @@ class BulkImport::VBulletin < BulkImport::Base
   def initialize
     super
 
-    host     = ENV["DB_HOST"] || "localhost"
+    # host     = ENV["DB_HOST"] || "localhost"
+    host     = ENV["DB_HOST"] || "127.0.0.1"
     username = ENV["DB_USERNAME"] || "root"
-    password = ENV["DB_PASSWORD"]
+    # password = ENV["DB_PASSWORD"] || "jalan"
+    password = ENV["DB_PASSWORD"] || ""
     database = ENV["DB_NAME"] || "vbulletin"
     charset  = ENV["DB_CHARSET"] || "utf8"
 
@@ -53,31 +55,7 @@ class BulkImport::VBulletin < BulkImport::Base
     # SiteSetting.clean_up_uploads = false
     # SiteSetting.clean_orphan_uploads_grace_period_hours = 43200
 
-    import_groups
-    import_users
-    import_group_users
-
-    import_user_emails
-    import_user_stats
-
-    import_user_passwords
-    import_user_salts
-    import_user_profiles
-
-    import_categories
-    import_topics
-    import_posts
-
-    import_likes
-
-    import_private_topics
-    import_topic_allowed_users
-    import_private_posts
-
-    create_permalink_file
-    import_attachments
-    import_avatars
-    import_signatures
+    get_attachments
   end
 
   def import_groups
@@ -685,6 +663,55 @@ class BulkImport::VBulletin < BulkImport::Base
     date_of_birth.year < 1904 ? Date.new(1904, date_of_birth.month, date_of_birth.day) : date_of_birth
   end
 
+  def get_attachments
+    sql = "SELECT a.attachmentid, a.userid, a.filename, a.postid,
+                  a.filehash, a.extension
+             FROM #{TABLE_PREFIX}attachment a"
+    results = mysql_query(sql)
+    total_count = results.count
+    current_count = 0
+    success_count = 0
+    fail_count = 0
+
+    results.each do |row|
+      current_count += 1
+      print_status current_count, total_count
+
+      attachment_id = row[0]
+      user_id = row[1]
+      db_filename = row[2]
+      orignal_post_id = row[3]
+
+      filename = File.join(ATTACHMENT_DIR, user_id.to_s.split('').join('/'), "#{attachment_id}.attach")
+      unless File.exists?(filename)
+        puts "Attachment file #{row.inspect} doesn't exist"
+        fail_count += 1
+        next
+      end
+
+      real_filename = db_filename
+      real_filename.prepend SecureRandom.hex if real_filename[0] == '.'
+
+      discourse_post_id = post_id_from_imported_id(orignal_post_id)
+      final_filename = "#{discourse_post_id}_#{real_filename}"
+      final_filename_path = ""
+
+      # copy file here
+      # upload = create_upload(post.user.id, filename, real_filename)
+      # puts final_filename
+      # `cp #{filename} /shared/import/data/recovery/#{final_filename}`
+      FileUtils.cp(filename, "/shared/import/data/recovery/#{final_filename}")
+      # exit
+      success_count += 1
+    end
+
+    puts "", "copied #{success_count} attachments... failed: #{fail_count}."
+  rescue Mysql2::Error => e
+    puts "SQL Error"
+    puts e.message
+    puts sql
+  end
+
   def print_status(current, max, start_time = nil)
     if start_time.present?
       elapsed_seconds = Time.now - start_time
@@ -707,3 +734,5 @@ class BulkImport::VBulletin < BulkImport::Base
 end
 
 BulkImport::VBulletin.new.run
+
+# bundle exec ruby script/bulk_import/vbulletin.rb

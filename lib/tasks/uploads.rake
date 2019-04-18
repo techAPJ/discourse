@@ -1,6 +1,8 @@
 require "db_helper"
 require "digest/sha1"
 require "base62"
+require_dependency 'url_helper'
+require_dependency 'file_helper'
 
 ################################################################################
 #                                    gather                                    #
@@ -768,4 +770,132 @@ task "uploads:recover" => :environment do
       UploadRecovery.new(dry_run: dry_run).recover
     end
   end
+end
+
+
+task "uploads:append_attachments" => :environment do
+  SiteSetting.authorized_extensions = '*'
+  SiteSetting.max_image_size_kb = 102400
+  SiteSetting.max_attachment_size_kb = 102400
+  SiteSetting.clean_up_uploads = false
+
+  db = RailsMultisite::ConnectionManagement.current_db
+  public_directory = Rails.root.join("public").to_s
+  recovery_directory = File.join(public_directory, 'uploads', db, 'recovery').to_s
+  recovered_directory = File.join(public_directory, 'uploads', db, 'recovered').to_s
+  count = 0
+  total = `ls -1 #{recovery_directory} | wc -l`.to_i
+  done = 0
+  skipped = 0
+  already_present = 0
+  Jobs.run_immediately!
+
+  Dir.foreach(recovery_directory) do |file|
+    next if file == '.' or file == '..'
+    file_path = "#{recovery_directory}/#{file}"
+    sha1 = Upload.generate_digest(file_path)
+
+    upload = Upload.where(sha1: sha1)
+    unless upload.present?
+      file_split = file.split("_")
+      post_id = file_split[0]
+      real_filename = file_split[1..-1].join("_")
+      post = Post.find_by_id(post_id)
+      unless post.present?
+        skipped += 1
+        next
+      end
+      # puts post.url
+      # puts file
+
+      begin
+        upload = create_upload(post.user.id, file_path, real_filename)
+        unless upload.present?
+          skipped += 1
+          next
+        end
+
+        post_raw = post.raw.dup
+        upload_html = html_for_upload(upload, real_filename)
+
+        if upload_html.blank?
+          skipped += 1
+          next
+        end
+
+        if post_raw =~ /#{Regexp.escape(upload_html)}/
+          already_present += 1
+          next
+        end
+
+        new_raw = "#{post_raw}\n\n#{upload_html}"
+        post.revise(Discourse.system_user, { raw: new_raw }, bypass_bump: true, skip_revision: true)
+
+        done += 1
+      rescue
+        skipped += 1
+      ensure
+        move_file(file_path, "#{recovered_directory}/#{file}")
+      end
+    else
+      already_present += 1
+    end
+    print_status(count += 1, total)
+  end
+
+  Jobs.run_later!
+  puts "", "Done! Imported #{done} attachments, skipped: #{skipped}, already_present: #{already_present}."
+end
+
+def move_file(source_file_path, destination_file_path)
+  FileUtils.mv(source_file_path, destination_file_path)
+rescue
+  nil
+end
+
+def create_upload(user_id, path, source_filename)
+  tmp = copy_to_tempfile(path)
+
+  UploadCreator.new(tmp, source_filename).create_for(user_id)
+rescue => e
+  STDERR.puts "Failed to create upload: #{e}"
+  nil
+ensure
+  tmp.close rescue nil
+  tmp.unlink rescue nil
+end
+
+def html_for_upload(upload, display_filename)
+  if FileHelper.is_supported_image?(upload.url)
+    embedded_image_html(upload)
+  else
+    attachment_html(upload, display_filename)
+  end
+end
+
+def embedded_image_html(upload)
+  image_width = [upload.width, SiteSetting.max_image_width].compact.min
+  image_height = [upload.height, SiteSetting.max_image_height].compact.min
+  upload_name = upload.short_url || upload.url
+  %Q~![#{upload.original_filename}|#{image_width}x#{image_height}](#{upload_name})~
+end
+
+def attachment_html(upload, display_filename)
+  "<a class='attachment' href='#{upload.url}'>#{display_filename}</a> (#{number_to_human_size(upload.filesize)})"
+end
+
+def copy_to_tempfile(source_path)
+  extension = File.extname(source_path)
+  tmp = Tempfile.new(['discourse-upload', extension])
+
+  File.open(source_path) do |source_stream|
+    IO.copy_stream(source_stream, tmp)
+  end
+
+  tmp.rewind
+  tmp
+end
+
+def print_status(current, max)
+  print "\r%9d / %d (%5.1f%%)" % [current, max, ((current.to_f / max.to_f) * 100).round(1)]
 end
