@@ -512,3 +512,154 @@ task 'import:file', [:file_name] => [:environment] do |_, args|
   ImportExport.import(args[:file_name])
   puts "", "Done", ""
 end
+
+task "import:better_pm_subjects" => :environment do
+  log 'Updating PM subjects...'
+
+  count = 0
+  updated = 0
+  total = Topic.private_messages.count
+
+  Topic.private_messages.find_each do |pm|
+    if pm.title =~ /Conversation /
+      clean_raw = ActionController::Base.helpers.strip_tags(pm.first_post.raw)
+      clean_raw = clean_raw.gsub(/\r/, " ")
+      clean_raw = clean_raw.gsub(/\n/, " ")
+      clean_raw = clean_raw.gsub(/\s+/, " ").strip
+      clean_raw = ActionController::Base.helpers.strip_tags(clean_raw)
+      clean_raw_truncated = "#{clean_raw.truncate(60)} ..."
+
+      pm.title = clean_raw_truncated
+      pm.save!
+
+      updated += 1
+    end
+    print_status(count += 1, total)
+   end
+
+  log "Done! #{updated} title updated."
+end
+
+task "import:remap_internal_links" => :environment do
+  log 'Remapping internal links...'
+  Jobs.run_immediately!
+
+  count = 0
+  updated = 0
+  skipped = 0
+  total = Post.where("raw LIKE ?", "%forum.ecommercefuel.com%").count
+  # http://forum.ecommercefuel.com/discussion/1014/bigcommerce-is-down (http://localhost:9292/t/big-c-vs-shopify-after-the-increase-now-which-one-why/3368/4?u=arpitjalan)
+
+  Post.where("raw LIKE ?", "%forum.ecommercefuel.com%").each do |p|
+    begin
+      new_raw = p.raw.dup
+      new_raw.gsub!(/"(https?:\/\/forum\.ecommercefuel\.com\/\S*)"/) do
+        # remap links inside anchor tags
+        url = $1
+        next if url =~ /https?:\/\/forum\.ecommercefuel\.com\/messages\//i
+        next if url =~ /https?:\/\/forum\.ecommercefuel\.com\/categories\//i
+
+        final = get_discourse_link(url)
+        "\"#{final}\""
+      end
+
+      # new_raw.gsub!(/(https?:\/\/forum\.ecommercefuel\.com\/discussion\/\S*)$/) do
+      new_raw.gsub!(/(https?:\/\/forum\.ecommercefuel\.com\/discussion\/[\d\w\/#-]+)/) do
+        url = $1
+
+        final = get_discourse_link(url)
+        final
+      end
+
+      # if (count > 1)
+      #   puts new_raw
+      #   exit
+      # end
+
+      if new_raw != p.raw
+        p.revise(Discourse.system_user, { raw: new_raw }, bypass_bump: true, skip_revision: true)
+        # puts p.url
+        # exit
+        updated += 1
+      else
+        skipped += 1
+      end
+
+      print_status(count += 1, total)
+    # rescue
+      # skip
+      # skipped += 1
+    end
+  end
+
+  Jobs.run_later!
+  log "Done! #{updated} links updated, #{skipped} skipped."
+end
+
+def get_discourse_link(url)
+  original_url = url.split("#")[0].chomp("/")
+  original_url = original_url.gsub("/p1", "").chomp("/")
+  original_url = original_url.gsub("/p2", "").chomp("/")
+  relative_url = original_url.gsub(/https?:\/\/forum\.ecommercefuel\.com/i, "")
+
+  final_url = url
+
+  permalink = Permalink.find_by_url(relative_url) rescue nil
+  if permalink.present?
+    if permalink.target_url
+      final_url = "https://forum.ecommercefuel.com#{permalink.target_url}"
+    else
+      puts "💥💥 -- #{relative_url}"
+    end
+  else
+    # let's try to find the topic/post manually
+    if relative_url =~ /discussion\/(\d+)\/\S*/
+      id = /discussion\/(\d+)\/\S*/.match(relative_url)
+      import_post_id = id[1]
+
+      first_post = PostCustomField.where(name: "import_id", value: "discussion##{import_post_id}".to_s).first&.post
+      if first_post.present?
+        topic = first_post.topic
+        final_url = "https://forum.ecommercefuel.com#{topic.relative_url}"
+      end
+    end
+
+    # look for user profile links
+    if relative_url =~ /\/profile\/(\d+)\/\S*/
+      id = /profile\/(\d+)\/\S*/.match(relative_url)
+      user_id = id[1]
+      user = UserCustomField.where(name: "import_id", value: user_id).first&.user
+      if user.present?
+        final_url = "https://forum.ecommercefuel.com/users/#{user.username}"
+      end
+    elsif relative_url =~ /\/profile\/\S*/
+      username = /profile\/(\w*)/.match(relative_url)
+      user = User.find_by_username(username[1])
+      if user.present?
+        final_url = "https://forum.ecommercefuel.com/users/#{user.username}"
+      end
+    end
+  end
+
+  # puts final_url if final_url == url
+  final_url
+end
+
+
+task "import:update_user_preferences" => :environment do
+  log 'Updating user preferences...'
+
+  # default other notification level when replying = Watching
+  # default other auto track topics after msecs = Immediately
+  # default email level = always
+  # default include tl0 in digests = checked
+  UserOption.update_all(notification_level_when_replying: TopicUser.notification_levels[:watching])
+  UserOption.update_all(auto_track_topics_after_msecs: 0)
+  UserOption.update_all(email_level: UserOption.email_level_types[:always])
+  UserOption.update_all(include_tl0_in_digests: true)
+end
+
+
+def print_status(current, max)
+  print "\r%9d / %d (%5.1f%%)" % [current, max, ((current.to_f / max.to_f) * 100).round(1)]
+end
