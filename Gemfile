@@ -216,6 +216,9 @@ if ENV["IMPORT"] == "1"
   gem 'tiny_tds'
   gem 'csv', '~> 3.0'
 end
+gem 'mysql2'
+gem 'ruby-bbcode-to-md', git: 'https://github.com/nlalonde/ruby-bbcode-to-md'
+gem 'reverse_markdown'
 
 gem 'webpush', require: false
 gem 'colored2', require: false

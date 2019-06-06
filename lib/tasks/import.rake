@@ -512,3 +512,61 @@ task 'import:file', [:file_name] => [:environment] do |_, args|
   ImportExport.import(args[:file_name])
   puts "", "Done", ""
 end
+
+task "import:remap_internal_links_answerhub" => :environment do
+  log 'Remapping internal links...'
+  Jobs.run_immediately!
+
+  count = 0
+  updated = 0
+  skipped = 0
+  total = Post.where("raw LIKE ?", "%/forums/questions/%").count
+  # <a href="https://gamedev.amazon.com/forums/questions/2005/missing-file.html">here</a>
+
+  Post.where("raw LIKE ?", "%/forums/questions/%").each do |p|
+    begin
+      new_raw = p.raw.dup
+      # new_raw.gsub!(/"(/(https:\/\/gamedev.amazon.com\/forums\/questions\/\d+\/[\w-]*.html)/)"/) do
+      #   # remap links inside anchor tags
+      #   url = $1
+      #   # next if url =~ /https?:\/\/forum\.ecommercefuel\.com\/messages\//i
+
+      #   final = get_discourse_link(url)
+      #   "\"#{final}\""
+      # end
+
+      # new_raw.gsub!(/(https?:\/\/forum\.ecommercefuel\.com\/discussion\/[\d\w\/#-]+)/) do
+      #   url = $1
+
+      #   final = get_discourse_link(url)
+      #   final
+      # end
+
+      # if (count > 1)
+      #   puts new_raw
+      #   exit
+      # end
+
+      if new_raw != p.raw
+        p.revise(Discourse.system_user, { raw: new_raw }, bypass_bump: true, skip_revision: true)
+        # puts p.url
+        # exit
+        updated += 1
+      else
+        skipped += 1
+      end
+
+      print_status(count += 1, total)
+    # rescue
+      # skip
+      # skipped += 1
+    end
+  end
+
+  Jobs.run_later!
+  log "Done! #{updated} links updated, #{skipped} skipped."
+end
+
+def print_status(current, max)
+  print "\r%9d / %d (%5.1f%%)" % [current, max, ((current.to_f / max.to_f) * 100).round(1)]
+end

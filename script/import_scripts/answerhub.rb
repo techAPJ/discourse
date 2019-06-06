@@ -11,19 +11,22 @@ require 'open-uri'
 
 class ImportScripts::AnswerHub < ImportScripts::Base
 
-  DB_NAME ||= ENV['DB_NAME'] || "answerhub"
-  DB_PASS ||= ENV['DB_PASS'] || "answerhub"
-  DB_USER ||= ENV['DB_USER'] || "answerhub"
-  TABLE_PREFIX ||= ENV['TABLE_PREFIX'] || "network1"
-  BATCH_SIZE ||= ENV['BATCH_SIZE'].to_i || 1000
-  ATTACHMENT_DIR = ENV['ATTACHMENT_DIR'] || ''
-  PROCESS_UPLOADS = ENV['PROCESS_UPLOADS'].to_i || 0
+  DB_NAME ||= ENV['DB_NAME'] || "lumberyard"
+  DB_PASS ||= ENV['DB_PASS'] || "jalan"
+  DB_USER ||= ENV['DB_USER'] || "root"
+  TABLE_PREFIX ||= ENV['TABLE_PREFIX'] || "network6"
+  BATCH_SIZE ||= 1000
+  # ATTACHMENT_DIR = ENV['ATTACHMENT_DIR'] || ''
+  ATTACHMENT_DIR = '/home/techapj/projects/lumberyard/attachments'
+  # PROCESS_UPLOADS = ENV['PROCESS_UPLOADS'].to_i || 0
+  PROCESS_UPLOADS = 1
   ANSWERHUB_DOMAIN = ENV['ANSWERHUB_DOMAIN']
   AVATAR_DIR = ENV['AVATAR_DIR'] || ""
-  SITE_ID = ENV['SITE_ID'].to_i || 0
-  CATEGORY_MAP_FROM = ENV['CATEGORY_MAP_FROM'].to_i || 0
-  CATEGORY_MAP_TO = ENV['CATEGORY_MAP_TO'].to_i || 0
-  SCRAPE_AVATARS = ENV['SCRAPE_AVATARS'].to_i || 0
+  SITE_ID = 7
+  CATEGORY_MAP_FROM = 8
+  CATEGORY_MAP_TO = 131
+  # SCRAPE_AVATARS = ENV['SCRAPE_AVATARS'].to_i || 0
+  SCRAPE_AVATARS = 1
 
   def initialize
     super
@@ -51,8 +54,11 @@ class ImportScripts::AnswerHub < ImportScripts::Base
     add_users_to_groups
     add_moderators
     add_admins
+    import_useruid
+
     import_avatars
-    create_permalinks
+    remap_internal_links
+    # create_permalinks
   end
 
   def import_users
@@ -352,6 +358,22 @@ class ImportScripts::AnswerHub < ImportScripts::Base
     end
   end
 
+  def import_useruid
+    puts "", "importing user UID..."
+
+    query = "SELECT * FROM network6_authentication_modes;"
+    amazon_ids = @client.query(query)
+
+    amazon_ids.each do |uid|
+      user_id = user_id_from_imported_user_id(uid["c_user"])
+      amazon_id = uid["c_auth_info"]
+
+      if user_id.present?
+        UserAssociatedAccount.create(provider_name: 'amazon', user_id: user_id, provider_uid: amazon_id)
+      end
+    end
+  end
+
   def import_avatars
     puts "", "importing user avatars"
     query =
@@ -395,6 +417,8 @@ class ImportScripts::AnswerHub < ImportScripts::Base
   end
 
   def process_uploads(body, user_id)
+    body = body.gsub('/forums/storage/temp/', '/forums/storage/attachments/')
+
     if body.match(/<img src="\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}">/)
       # There could be multiple images in a post
       images = body.scan(/<img src="\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}">/)
@@ -412,6 +436,25 @@ class ImportScripts::AnswerHub < ImportScripts::Base
         end
       end
     end
+
+    if body.match(/<img src="https:\/\/gamedev.amazon.com\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}">/)
+      # There could be multiple images in a post
+      images = body.scan(/<img src="https:\/\/gamedev.amazon.com\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}">/)
+
+      images.each do |image|
+        filepath = File.basename(image).split('"')[0]
+        filepath = File.join(ATTACHMENT_DIR, filepath)
+
+        if File.exists?(filepath)
+          filename = File.basename(filepath)
+          upload = create_upload(user_id, filepath, filename)
+          image_html = html_for_upload(upload, filename)
+          original_image_html = '<img src="https://gamedev.amazon.com/forums/storage/attachments/' + filename + '">'
+          body.sub!(original_image_html, image_html)
+        end
+      end
+    end
+
     # Non-images
     if body.match(/<a href="\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}">/)
       # There could be multiple files in a post
@@ -431,16 +474,57 @@ class ImportScripts::AnswerHub < ImportScripts::Base
       end
     end
 
+    if body.match(/<a href="https:\/\/gamedev.amazon.com\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}">/)
+      # There could be multiple files in a post
+      files = body.scan(/<a href="https:\/\/gamedev.amazon.com\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}">/)
+
+      files.each do |file|
+        filepath = File.basename(file).split('"')[0]
+        filepath = File.join(ATTACHMENT_DIR, filepath)
+
+        if File.exists?(filepath)
+          filename = File.basename(filepath)
+          upload = create_upload(user_id, filepath, filename)
+          file_html = html_for_upload(upload, filename)
+          original_file_html = '<a href="https://gamedev.amazon.com/forums/storage/attachments/' + filename + '">'
+          body.sub!(original_file_html, file_html)
+        end
+      end
+    end
+
+    if body.match(/"https:\/\/gamedev.amazon.com\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}">/)
+      # There could be multiple files in a post
+      files = body.scan(/"https:\/\/gamedev.amazon.com\/forums\/storage\/attachments\/[\w-]*.[a-z]{3,4}"/)
+
+      files.each do |file|
+        filepath = File.basename(file).split('"')[0]
+        puts "6 -- #{filepath}"
+        filepath = File.join(ATTACHMENT_DIR, filepath)
+        puts "7 -- #{filepath}"
+
+        if File.exists?(filepath)
+          filename = File.basename(filepath)
+          puts "8 -- #{filename}"
+          upload = create_upload(user_id, filepath, filename)
+          # file_html = html_for_upload(upload, filename)
+          original_url = '"https://gamedev.amazon.com/forums/storage/attachments/' + filename + '"'
+          upload_url = '"'+upload.url+'"'
+          # puts "#{original_url} -- #{upload_url}"
+          body.sub!(original_url, upload_url)
+        end
+      end
+    end
+
     body
   end
 
   def process_mentions(body)
     raw = body.dup
 
-    # https://example.forum.com/forums/users/1469/XYZ_Rob.html
-    raw.gsub!(/(https:\/\/example.forum.com\/forums\/users\/\d+\/[\w_%-.]*.html)/) do
+    # https://gamedev.amazon.com/forums/users/1469/AMZN_Rob.html
+    raw.gsub!(/(https:\/\/gamedev.amazon.com\/forums\/users\/\d+\/[\w_%-.]*.html)/) do
       legacy_url = $1
-      import_user_id = legacy_url.match(/https:\/\/example.forum.com\/forums\/users\/(\d+)\/[\w_%-.]*.html/).captures
+      import_user_id = legacy_url.match(/https:\/\/gamedev.amazon.com\/forums\/users\/(\d+)\/[\w_%-.]*.html/).captures
 
       user = @lookup.find_user_by_import_id(import_user_id[0])
       if user.present?
@@ -471,10 +555,79 @@ class ImportScripts::AnswerHub < ImportScripts::Base
     raw
   end
 
+  def remap_internal_links
+    puts 'Remapping internal links...'
+    Jobs.run_immediately!
+
+    count = 0
+    updated = 0
+    skipped = 0
+    total = Post.where("raw LIKE ?", "%gamedev.amazon.com%").count
+
+    Post.where("raw LIKE ?", "%gamedev.amazon.com%").each do |p|
+      begin
+        new_raw = p.raw.dup
+        new_raw.gsub!(/(https:\/\/gamedev.amazon.com\/forums\/questions\/\d+\/[\w_%-.]*.html)/) do
+          legacy_url = $1
+          final = legacy_url
+          import_topic_id = legacy_url.match(/https:\/\/gamedev.amazon.com\/forums\/questions\/(\d+)\/[\w_%-.]*.html/).captures
+          t = topic_lookup_from_imported_post_id(import_topic_id[0])
+          if t.present?
+            final = "https://forums.awsgametech.com#{t[:url]}"
+          end
+          final
+        end
+
+        # https://gamedev.amazon.com/forums/articles/61536/index.html#comment-61745
+        new_raw.gsub!(/(https:\/\/gamedev.amazon.com\/forums\/articles\/\d+\/[\w_%-.]*.html)/) do
+          legacy_url = $1
+          final = legacy_url
+          import_topic_id = legacy_url.match(/https:\/\/gamedev.amazon.com\/forums\/articles\/(\d+)\/[\w_%-.]*.html/).captures
+          t = topic_lookup_from_imported_post_id(import_topic_id[0])
+          if t.present?
+            final = "https://forums.awsgametech.com#{t[:url]}"
+          end
+          final
+        end
+
+        # https://gamedev.amazon.com/forums/content/kbentry/75716/realtime-server-project-setup.html
+        new_raw.gsub!(/(https:\/\/gamedev.amazon.com\/forums\/content\/kbentry\/\d+\/[\w_%-.]*.html)/) do
+          legacy_url = $1
+          final = legacy_url
+          import_topic_id = legacy_url.match(/https:\/\/gamedev.amazon.com\/forums\/content\/kbentry\/(\d+)\/[\w_%-.]*.html/).captures
+          t = topic_lookup_from_imported_post_id(import_topic_id[0])
+          if t.present?
+            final = "https://forums.awsgametech.com#{t[:url]}"
+          end
+          final
+        end
+
+        # puts new_raw
+        # exit
+        if new_raw != p.raw
+          p.revise(Discourse.system_user, { raw: new_raw }, bypass_bump: true, skip_revision: true)
+          # puts p.url
+          # exit
+          updated += 1
+        else
+          skipped += 1
+        end
+
+        print_status(count += 1, total)
+      # rescue
+        # skip
+        # skipped += 1
+      end
+    end
+
+    Jobs.run_later!
+    puts "Done! #{updated} links updated, #{skipped} skipped."
+  end
+
   def create_permalinks
     puts '', 'Creating redirects...', ''
 
-    # https://example.forum.com/forums/questions/2005/missing-file.html
+    # https://gamedev.amazon.com/forums/questions/2005/missing-file.html
     Topic.find_each do |topic|
       pcf = topic.first_post.custom_fields
       if pcf && pcf["import_id"]
@@ -484,6 +637,9 @@ class ImportScripts::AnswerHub < ImportScripts::Base
         print '.'
       end
     end
+
+    # https://gamedev.amazon.com/forums/articles/69806/script-canvas-tutorials-lets-get-start-lumberyard.html
+    # https://gamedev.amazon.com/forums/articles/8675/bug-component-parent-and-ctrlz.html#comment-8702
   end
 
   def staff_guardian
@@ -500,3 +656,6 @@ class ImportScripts::AnswerHub < ImportScripts::Base
 end
 
 ImportScripts::AnswerHub.new.perform
+
+# IMPORT=1 BATCH_SIZE=100 SITE_ID=7 CATEGORY_MAP_FROM=8 CATEGORY_MAP_TO=131 PROCESS_UPLOADS=1 AVATAR_DIR='' TABLE_PREFIX=network6
+# bundle exec ruby script/import_scripts/answerhub.rb
