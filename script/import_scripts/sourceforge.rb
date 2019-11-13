@@ -15,10 +15,11 @@ require_relative 'base.rb'
 class ImportScripts::Sourceforge < ImportScripts::Base
   # When the URL of your project is https://sourceforge.net/projects/foo/
   # than the value of PROJECT_NAME is 'foo'
-  PROJECT_NAME = 'project_name'
+  PROJECT_NAME = 'freertos'
 
   # This is the path to the discussion.json that you exported from SourceForge.
-  JSON_FILE = '/path/to/discussion.json'
+  JSON_FILE = '/home/ajalan/projects/freertos/data/discussion.json'
+  USER_FILE = '/home/ajalan/projects/freertos/data/emails.json'
 
   def initialize
     super
@@ -31,12 +32,45 @@ class ImportScripts::Sourceforge < ImportScripts::Base
 
     load_json
 
-    import_categories
+    # import_users
+    # import_categories
     import_topics
   end
 
   def load_json
     @json = MultiJson.load(File.read(JSON_FILE), symbolize_keys: true)
+  end
+
+  def repair_json(arg)
+    arg.gsub!(/^\(/, "")     # content of file is surround by ( )
+    arg.gsub!(/\)$/, "")
+
+    arg.gsub!(/\]\]$/, "]")  # there can be an extra ] at the end
+
+    arg.gsub!(/\}\{/, "},{") # missing commas sometimes!
+
+    arg.gsub!("}]{", "},{")  # surprise square brackets
+    arg.gsub!("}[{", "},{")  # :troll:
+
+    arg
+  end
+
+  def import_users
+    puts '', 'importing users'
+
+    users = JSON.parse(repair_json(File.read(USER_FILE)))
+    # puts users.first.inspect
+    # exit
+
+    create_users(users) do |user|
+      {
+        id: user["username"],
+        email: user["email"],
+        username: user["username"],
+        name: user["name"],
+        created_at: Time.now,
+      }
+    end
   end
 
   def import_categories
@@ -63,7 +97,7 @@ class ImportScripts::Sourceforge < ImportScripts::Base
     total_post_count = count_posts
 
     @json[:forums].each do |forum|
-      imported_category_id = @lookup.category_id_from_imported_category_id(forum[:shortname])
+      imported_category_id = 5
 
       forum[:threads].each do |thread|
         posts = thread[:posts]
@@ -74,12 +108,13 @@ class ImportScripts::Sourceforge < ImportScripts::Base
         imported_topic = nil
 
         create_posts(posts, total: total_post_count, offset: imported_post_count) do |post|
+          next if post_id_from_imported_post_id("#{thread[:_id]}_#{post[:slug]}")
           mapped = {
             id: "#{thread[:_id]}_#{post[:slug]}",
-            user_id: @system_user,
             created_at: Time.zone.parse(post[:timestamp]),
             raw: process_post_text(forum, thread, post)
           }
+          mapped[:user_id] = user_id_from_imported_user_id(post[:author]) || @system_user.id
 
           if post == first_post
             mapped[:category] = imported_category_id
@@ -137,3 +172,5 @@ class ImportScripts::Sourceforge < ImportScripts::Base
 end
 
 ImportScripts::Sourceforge.new.perform
+
+# bundle exec ruby script/import_scripts/sourceforge.rb
