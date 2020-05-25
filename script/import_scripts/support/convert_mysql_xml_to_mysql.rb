@@ -72,9 +72,10 @@ class Convert < Saxy
 
     row = data[:row_data]
     col_names = row.keys.join(",")
+
     vals = row.values.map { |v| "'#{v.gsub("'", "''").gsub('\\', '\\\\\\')}'" }.join(",")
     puts "INSERT INTO #{name} (#{col_names}) VALUES (#{vals});"
   end
 end
 
-Ox.sax_parse(Convert.new(skip_data: ['metrics2', 'user_log']), File.open(ARGV[0]))
+Ox.sax_parse(Convert.new(skip_data: ['email_tracking2', 'metrics2', 'user_log']), File.open(ARGV[0]))

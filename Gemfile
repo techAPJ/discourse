@@ -250,3 +250,7 @@ gem 'colored2', require: false
 gem 'maxminddb'
 
 gem 'rails_failover', require: false
+
+gem 'ox'
+gem 'mysql2'
+gem 'reverse_markdown', path: '../projects/reverse_markdown'

@@ -1,3 +1,9 @@
+PATH
+  remote: ../projects/reverse_markdown
+  specs:
+    reverse_markdown (2.0.0)
+      nokogiri
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -203,6 +209,7 @@ GEM
     multi_xml (0.6.0)
     multipart-post (2.1.1)
     mustache (1.1.1)
+    mysql2 (0.5.3)
     nio4r (2.5.2)
     nokogiri (1.10.9)
       mini_portile2 (~> 2.4.0)
@@ -249,6 +256,7 @@ GEM
       sanitize
     openssl-signature_algorithm (0.4.0)
     optimist (3.0.1)
+    ox (2.13.2)
     parallel (1.19.1)
     parallel_tests (2.32.0)
       parallel
@@ -496,6 +504,7 @@ DEPENDENCIES
   mock_redis
   multi_json
   mustache
+  mysql2
   nokogiri
   oj
   omniauth
@@ -506,6 +515,7 @@ DEPENDENCIES
   omniauth-oauth2
   omniauth-twitter
   onebox
+  ox
   parallel_tests
   pg
   pry-rails
@@ -524,6 +534,7 @@ DEPENDENCIES
   rchardet
   redis
   redis-namespace
+  reverse_markdown!
   rinku
   rotp
   rqrcode

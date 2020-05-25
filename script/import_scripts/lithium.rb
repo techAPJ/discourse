@@ -27,15 +27,16 @@ class ImportScripts::Lithium < ImportScripts::Base
   BATCH_SIZE = 1000
 
   # CHANGE THESE BEFORE RUNNING THE IMPORTER
-  DATABASE = "wd"
-  PASSWORD = "password"
-  AVATAR_DIR = '/tmp/avatars'
-  ATTACHMENT_DIR = '/tmp/attachments'
-  UPLOAD_DIR = '/tmp/uploads'
+  DATABASE = "github"
+  PASSWORD = "jalan"
+  ATTACHMENT_DIR = '/home/ajalan/projects/github/attachments/github.prod'
+  UPLOAD_DIR = '/home/ajalan/projects/github/image_extract'
 
-  OLD_DOMAIN = 'community.wd.com'
+  OLD_DOMAIN = 'github.community'
 
   TEMP = ""
+
+  DELETED_IDS = [1, -106]
 
   USER_CUSTOM_FIELDS = [
     { name: "sso_id", user: "sso_id" },
@@ -59,43 +60,49 @@ class ImportScripts::Lithium < ImportScripts::Base
 
     @client = Mysql2::Client.new(
       host: "localhost",
-      username: "root",
+      username: "ajalan",
       password: PASSWORD,
-      database: DATABASE
+      database: DATABASE,
+      encoding: "utf8mb4"
     )
   end
 
   def execute
 
-    @max_start_id = Post.maximum(:id)
+    @max_start_id = 0
+    # @max_start_id = Post.maximum(:id)
 
     import_groups
     import_categories
     import_users
     import_user_visits
+    import_group_members
+
     import_topics
     import_posts
     import_likes
     import_accepted_answers
     import_pms
     close_topics
+
     create_permalinks
 
     post_process_posts
+    suspend_users
   end
 
   def import_groups
     puts "", "importing groups..."
 
     groups = mysql_query <<-SQL
-        SELECT DISTINCT name
+        SELECT id, name
           FROM roles
-      ORDER BY name
+      GROUP BY name
     SQL
 
     create_groups(groups) do |group|
       {
-        id: group["name"],
+        id: group["id"],
         name: @htmlentities.decode(group["name"]).strip
       }
     end
@@ -105,7 +112,6 @@ class ImportScripts::Lithium < ImportScripts::Base
     puts "", "importing users"
 
     user_count = mysql_query("SELECT COUNT(*) count FROM users").first["count"]
-    avatar_files = Dir.entries(AVATAR_DIR)
     duplicate_emails = mysql_query("SELECT email_lower FROM users GROUP BY email_lower HAVING COUNT(email_lower) > 1").map { |e| [e["email_lower"], 0] }.to_h
 
     batches(BATCH_SIZE) do |offset|
@@ -137,7 +143,7 @@ class ImportScripts::Lithium < ImportScripts::Base
         profile = profiles.select { |p|  p["user_id"] == user_id }
         result = profile.select { |p|  p["param"] == "profile.location" }
         location = result.count > 0 ? result.first["nvalue"] : nil
-        username = user["login_canon"]
+        username = @htmlentities.decode(user["login_canon"]).strip.gsub('_','-')
         username = USERNAME_MAPPINGS[username] if USERNAME_MAPPINGS[username].present?
 
         email = user["email"].presence || fake_email
@@ -154,33 +160,20 @@ class ImportScripts::Lithium < ImportScripts::Base
           email: email,
           location: location,
           custom_fields: user_custom_fields(user, profile),
-          # website: user["homepage"].strip,
-          # title: @htmlentities.decode(user["usertitle"]).strip,
-          # primary_group_id: group_id_from_imported_group_id(user["usergroupid"]),
           created_at: unix_time(user["registration_time"]),
-          post_create_action: proc do |u|
-            @old_username_to_new_usernames[user["login_canon"]] = u.username
 
-            # import user avatar
+          post_create_action: proc do |u|
+            # @old_username_to_new_usernames[user["login_canon"]] = u.username
+
             sso_id = u.custom_fields["sso_id"]
             if sso_id.present?
-              prefix = "#{AVATAR_DIR}/#{sso_id}_"
-              file = get_file(prefix + "actual.jpeg")
-              file ||= get_file(prefix + "profile.jpeg")
+              # create GithubUserInfo record
 
-              if file.present?
-                upload = UploadCreator.new(file, file.path, type: "avatar").create_for(u.id)
-                u.create_user_avatar unless u.user_avatar
-
-                if !u.user_avatar.contains_upload?(upload.id)
-                  u.user_avatar.update_columns(custom_upload_id: upload.id)
-
-                  if u.uploaded_avatar_id.nil? ||
-                    !u.user_avatar.contains_upload?(u.uploaded_avatar_id)
-                    u.update_columns(uploaded_avatar_id: upload.id)
-                  end
-                end
-              end
+              GithubUserInfo.create!(
+                  user_id: u.id,
+                  screen_name: username,
+                  github_user_id: sso_id
+              )
             end
           end
         }
@@ -217,6 +210,30 @@ class ImportScripts::Lithium < ImportScripts::Base
     end
   end
 
+
+  def import_group_members
+    puts "", "importing group members..."
+
+    updated = 0
+    total = mysql_query("SELECT count(*) count FROM user_role").first['count']
+
+    mysql_query("SELECT user_id, role_id FROM user_role").each do |g|
+      user_id = user_id_from_imported_user_id(g['user_id'])
+      group_id = group_id_from_imported_group_id(g['role_id'])
+
+      if user_id && group_id
+        GroupUser.find_or_create_by(user_id: user_id, group_id: group_id)
+        # puts "yaya"
+        updated += 1
+      else
+        puts "ERROR -- #{g.inspect}"
+      end
+
+      print_status updated, total
+    end
+  end
+
+
   def user_custom_fields(user, profile)
     fields = Hash.new
 
@@ -241,62 +258,6 @@ class ImportScripts::Lithium < ImportScripts::Base
 
   def unix_time(t)
     Time.at(t / 1000.0)
-  end
-
-  def import_profile_picture(old_user, imported_user)
-    query = mysql_query <<-SQL
-        SELECT filedata, filename
-          FROM customavatar
-         WHERE userid = #{old_user["userid"]}
-      ORDER BY dateline DESC
-         LIMIT 1
-    SQL
-
-    picture = query.first
-
-    return if picture.nil?
-
-    file = Tempfile.new("profile-picture")
-    file.write(picture["filedata"].encode("ASCII-8BIT").force_encoding("UTF-8"))
-    file.rewind
-
-    upload = UploadCreator.new(file, picture["filename"]).create_for(imported_user.id)
-
-    return if !upload.persisted?
-
-    imported_user.create_user_avatar
-    imported_user.user_avatar.update(custom_upload_id: upload.id)
-    imported_user.update(uploaded_avatar_id: upload.id)
-  ensure
-    file.close rescue nil
-    file.unlind rescue nil
-  end
-
-  def import_profile_background(old_user, imported_user)
-    query = mysql_query <<-SQL
-        SELECT filedata, filename
-          FROM customprofilepic
-         WHERE userid = #{old_user["userid"]}
-      ORDER BY dateline DESC
-         LIMIT 1
-    SQL
-
-    background = query.first
-
-    return if background.nil?
-
-    file = Tempfile.new("profile-background")
-    file.write(background["filedata"].encode("ASCII-8BIT").force_encoding("UTF-8"))
-    file.rewind
-
-    upload = UploadCreator.new(file, background["filename"]).create_for(imported_user.id)
-
-    return if !upload.persisted?
-
-    imported_user.user_profile.upload_profile_background(upload)
-  ensure
-    file.close rescue nil
-    file.unlink rescue nil
   end
 
   def import_categories
@@ -326,9 +287,9 @@ class ImportScripts::Lithium < ImportScripts::Base
         id: category["node_id"],
         name: category["name"],
         position: category["position"],
-        post_create_action: lambda do |record|
-          after_category_create(record, category)
-        end
+        # post_create_action: lambda do |record|
+        #   after_category_create(record, category)
+        # end
       }
     end
 
@@ -342,9 +303,9 @@ class ImportScripts::Lithium < ImportScripts::Base
         name: category["name"],
         position: category["position"],
         parent_category_id: category_id_from_imported_category_id(category["parent_node_id"]),
-        post_create_action: lambda do |record|
-          after_category_create(record, category)
-        end
+        # post_create_action: lambda do |record|
+        #   after_category_create(record, category)
+        # end
       }
     end
   end
@@ -352,7 +313,7 @@ class ImportScripts::Lithium < ImportScripts::Base
   def after_category_create(category, params)
     node_id = category.custom_fields["import_id"]
     roles = mysql_query <<-SQL
-      SELECT name
+      SELECT name, id
         FROM roles
       WHERE node_id = #{node_id}
     SQL
@@ -361,7 +322,7 @@ class ImportScripts::Lithium < ImportScripts::Base
       category.update(read_restricted: true)
 
       roles.each do |role|
-        group_id = group_id_from_imported_group_id(role["name"])
+        group_id = group_id_from_imported_group_id(role["id"])
         if group_id.present?
           CategoryGroup.find_or_create_by(category: category, group_id: group_id) do |cg|
             cg.permission_type = CategoryGroup.permission_types[:full]
@@ -406,10 +367,18 @@ class ImportScripts::Lithium < ImportScripts::Base
 
       create_posts(topics, total: topic_count, offset: offset) do |topic|
 
-        category_id = category_id_from_imported_category_id(topic["node_id"])
-        deleted_at = topic["deleted"] == 1 ? topic["row_version"] : nil
-        raw = topic["body"]
+        # next unless "#{topic["node_id"]} #{topic["id"]}" == "33 2199"
+        # raw = topic["body"]
+        # raw = postprocess_post_raw(raw, 12)
+        # puts raw
+        # puts topic.inspect
+        # exit
 
+        deleted_at = DELETED_IDS.include?(topic["deleted"]) ? topic["row_version"] : nil
+        next if deleted_at.present?
+
+        category_id = category_id_from_imported_category_id(topic["node_id"])
+        raw = topic["body"]
         if category_id.present? && raw.present?
           {
             id: "#{topic["node_id"]} #{topic["id"]}",
@@ -418,7 +387,6 @@ class ImportScripts::Lithium < ImportScripts::Base
             category: category_id,
             raw: raw,
             created_at: unix_time(topic["post_date"]),
-            deleted_at: deleted_at,
             views: topic["views"],
             custom_fields: { import_unique_id: topic["unique_id"] },
             import_mode: true,
@@ -468,12 +436,25 @@ class ImportScripts::Lithium < ImportScripts::Base
       next if all_records_exist? :posts, posts.map { |post| "#{post["node_id"]} #{post["root_id"]} #{post["id"]}" }
 
       create_posts(posts, total: post_count, offset: offset) do |post|
-        raw = post["raw"]
+
+        # next unless "#{post["node_id"]} #{post["root_id"]} #{post["id"]}" == "22 33 36"
+        # next unless "#{post["node_id"]} #{post["root_id"]} #{post["id"]}" == "33 2199 2233"
+        # next unless "#{post["node_id"]} #{post["root_id"]} #{post["id"]}" == "22 33 57"
+        # raw = post["body"]
+        # raw = postprocess_post_raw(raw, 12)
+        # puts raw
+        # puts post.inspect
+        # exit
+
+        # puts raw
+        # exit
+
         next unless topic = topic_lookup_from_imported_post_id("#{post["node_id"]} #{post["root_id"]}")
 
-        deleted_at = topic["deleted"] == 1 ? topic["row_version"] : nil
-        raw = post["body"]
+        deleted_at = DELETED_IDS.include?(post["deleted"]) ? post["row_version"] : nil
+        next if deleted_at.present?
 
+        raw = post["body"]
         if raw.present?
           new_post = {
             id: "#{post["node_id"]} #{post["root_id"]} #{post["id"]}",
@@ -481,7 +462,6 @@ class ImportScripts::Lithium < ImportScripts::Base
             topic_id: topic[:topic_id],
             raw: raw,
             created_at: unix_time(post["post_date"]),
-            deleted_at: deleted_at,
             custom_fields: { import_unique_id: post["unique_id"] },
             import_mode: true
           }
@@ -888,7 +868,7 @@ SQL
           post.raw = new_raw
           post.cooked = post.cook(new_raw)
           cpp = CookedPostProcessor.new(post)
-          cpp.link_post_uploads
+          post.link_post_uploads
           post.custom_fields["import_post_process"] = true
           post.save
         end
@@ -933,7 +913,7 @@ SQL
             if l["href"]
               if permalink && permalink.target_url
                 l["href"] = permalink.target_url
-              elsif l["href"] =~ /^\/gartner\/attachments\/gartner\/([^.]*).(\w*)/
+              elsif l["href"] =~ /^\/github\/attachments\/github\/([^.]*).(\w*)/
                 linked_upload = "#{$1}.#{$2}"
               end
             end
@@ -946,6 +926,7 @@ SQL
       end
 
       if upload_name
+
         png = UPLOAD_DIR + "/" + upload_name + ".png"
         jpg = UPLOAD_DIR + "/" + upload_name + ".jpg"
         gif = UPLOAD_DIR + "/" + upload_name + ".gif"
@@ -958,6 +939,9 @@ SQL
         elsif File.exists?(gif)
           image = gif
         end
+
+        # puts image
+        # exit
 
         if image
           File.open(image) do |file|
@@ -1009,7 +993,12 @@ SQL
     end
 
     raw = ReverseMarkdown.convert(doc.to_s)
+
+    # strip <p>&nbsp;</p>
+    raw.gsub!(/<p>&nbsp;<\/p>/, " ")
+
     raw.gsub!(/^\s*&nbsp;\s*$/, "")
+
     # ugly quotes
     raw.gsub!(/^>[\s\*]*$/, "")
     raw.gsub!(/:([a-z]+):/) do |match|
@@ -1034,6 +1023,38 @@ SQL
     html
   end
 
+  def suspend_users
+    puts '', "updating banned users"
+
+    banned = 0
+    failed = 0
+    total = mysql_query("SELECT count(*) count FROM user_bans").first['count']
+
+    mysql_query("SELECT user_id, date_start, banned_by FROM user_bans").each do |b|
+      user = User.find_by_id(user_id_from_imported_user_id(b['user_id']))
+      acting_user = User.find_by_id(user_id_from_imported_user_id(b['banned_by']))
+      acting_user = Discourse.system_user unless acting_user.present?
+
+      if user
+        user.suspended_at = unix_time(b["date_start"])
+        user.suspended_till = 200.years.from_now
+
+        if user.save
+          StaffActionLogger.new(acting_user).log_user_suspend(user, "banned during initial import")
+          banned += 1
+        else
+          puts "Failed to suspend user #{user.username}. #{user.errors.try(:full_messages).try(:inspect)}"
+          failed += 1
+        end
+      else
+        puts "Not found: #{b['user_id']}"
+        failed += 1
+      end
+
+      print_status banned + failed, total
+    end
+  end
+
   def mysql_query(sql)
     @client.query(sql, cache_rows: true)
   end
@@ -1041,3 +1062,7 @@ SQL
 end
 
 ImportScripts::Lithium.new.perform
+
+# bundle exec ruby script/import_scripts/support/convert_mysql_xml_to_mysql.rb /home/ajalan/projects/github/github-export.xml > data.sql
+# bundle exec rake db:drop db:create db:migrate
+# bundle exec ruby script/import_scripts/lithium.rb

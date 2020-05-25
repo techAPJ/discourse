@@ -52,7 +52,7 @@ class ImportScripts::Base
       update_topic_status
       update_bumped_at
       update_last_posted_at
-      update_last_seen_at
+      # update_last_seen_at
       update_user_stats
       update_topic_users
       update_post_timings
@@ -319,7 +319,7 @@ class ImportScripts::Base
 
     unless opts[:email][EmailValidator.email_regex]
       opts[:email] = fake_email
-      puts "Invalid email '#{original_email}' for '#{opts[:username]}'. Using '#{opts[:email]}'"
+      # puts "Invalid email '#{original_email}' for '#{opts[:username]}'. Using '#{opts[:email]}'"
     end
 
     opts[:name] = original_username if original_name.blank? && opts[:username] != original_username
@@ -370,21 +370,22 @@ class ImportScripts::Base
     end
 
     if u.custom_fields['import_email']
-      u.suspended_at = Time.zone.at(Time.now)
-      u.suspended_till = 200.years.from_now
-      u.save!
+      # u.suspended_at = Time.zone.at(Time.now)
+      # u.suspended_till = 200.years.from_now
+      # u.save!
 
       user_option = u.user_option
       user_option.email_digests = false
       user_option.email_level = UserOption.email_level_types[:never]
       user_option.email_messages_level = UserOption.email_level_types[:never]
       user_option.save!
-      if u.save
-        StaffActionLogger.new(Discourse.system_user).log_user_suspend(u, 'Invalid email address on import')
-      else
-        Rails.logger.error("Failed to suspend user #{u.username}. #{u.errors.try(:full_messages).try(:inspect)}")
-      end
+      u.save
 
+      # if u.save
+      #   StaffActionLogger.new(Discourse.system_user).log_user_suspend(u, 'Invalid email address on import')
+      # else
+      #   Rails.logger.error("Failed to suspend user #{u.username}. #{u.errors.try(:full_messages).try(:inspect)}")
+      # end
     end
 
     post_create_action.try(:call, u) if u.persisted?
@@ -570,6 +571,14 @@ class ImportScripts::Base
 
     post_creator = PostCreator.new(user, opts)
     post = post_creator.create
+
+    # if opts[:deleted_at].present?
+    #   post.deleted_at = opts[:deleted_at]
+    #   post.save!
+    # end
+    # puts post.inspect
+    # exit
+
     post_create_action.try(:call, post) if post
     post && post_creator.errors.empty? ? post : post_creator.errors.full_messages
   end
@@ -684,7 +693,7 @@ class ImportScripts::Base
       FROM users u1
       JOIN lpa ON lpa.user_id = u1.id
       WHERE u1.id = users.id
-        AND users.last_posted_at <> lpa.last_posted_at
+        AND users.last_posted_at IS DISTINCT FROM lpa.last_posted_at
     SQL
   end
 
@@ -702,7 +711,7 @@ class ImportScripts::Base
       FROM user_stats u1
       JOIN sub ON sub.user_id = u1.user_id
       WHERE u1.user_id = user_stats.user_id
-        AND user_stats.first_post_created_at <> sub.first_post_created_at
+        AND user_stats.first_post_created_at IS DISTINCT FROM sub.first_post_created_at
     SQL
 
     puts "", "Updating user post_count..."
