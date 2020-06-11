@@ -46,6 +46,7 @@ export default (filterArg, params) => {
         }
       }
 
+      console.log("hhehe");
       return modelParams;
     },
 
@@ -70,6 +71,7 @@ export default (filterArg, params) => {
         });
       }
 
+      console.log("22222");
       if (category) {
         return { category, modelParams };
       }
@@ -100,6 +102,8 @@ export default (filterArg, params) => {
         this._createSubcategoryList(category),
         this._retrieveTopicList(category, transition, modelParams)
       ]);
+
+      console.log("3333");
     },
 
     filter(category) {
@@ -117,6 +121,9 @@ export default (filterArg, params) => {
         filterType,
         noSubcategories
       });
+
+
+      console.log("4444");
     },
 
     _createSubcategoryList(category) {
