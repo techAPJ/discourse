@@ -41,6 +41,7 @@ class Group < ActiveRecord::Base
 
   before_save :downcase_incoming_email
   before_save :cook_bio
+  before_save :check_flair_permissions
 
   after_save :destroy_deletions
   after_save :update_primary_group
@@ -301,6 +302,16 @@ class Group < ActiveRecord::Base
       self.bio_cooked = PrettyText.cook(self.bio_raw)
     else
       self.bio_cooked = nil
+    end
+  end
+
+  def check_flair_permissions
+    # xyz
+    unless self.visibility_level == Group.visibility_levels[:public] && self.members_visibility_level == Group.visibility_levels[:public]
+      self.flair_color = nil
+      self.flair_bg_color = nil
+      self.flair_icon = nil
+      self.flair_upload_id = nil
     end
   end
 
